@@ -18,4 +18,4 @@ We review incoming requests as time permits. Response times may vary, and we may
 
 ## Security issues
 
-If you believe you have found a security vulnerability, please **do not** open a public Issue. Instead, report it by email to the addresses above.
+If you believe you have found a security vulnerability, please **DO NOT** open a public Issue. Instead, report it by email to the addresses above.

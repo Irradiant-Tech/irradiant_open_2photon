@@ -30,3 +30,10 @@ Follow the existing style and conventions in the codebase. When in doubt, match 
 
 ## License
 By submitting a contribution, you agree that your contribution may be used and distributed under this repository’s license.
+
+## Hardware and System Design Contributions
+
+In addition to software contributions, we welcome hardware and system design ideas! If you have modified the hardware or system design and achieved good results, we welcome you to share your experience by contacting one of the following:
+- zhenle@irradiant.tech (hardware/system design inquiries)
+- katya@irradiant.tech
+- lisa.gavronskiy@irradiant.tech

@@ -1,0 +1,5 @@
+/.venv
+/print_files
+*.pyc
+*.npy
+/gui/gui_state.json

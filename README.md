@@ -195,3 +195,12 @@ python -m tests.aom_set_power_test
 We welcome contributions to Irradiant-2photon, including software, hardware, and system design improvements.
 
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
+
+
+## Citation
+
+If you use this software in your research, please cite:
+
+Shabahang, S., et al. "[A low-cost, open-access two-photon lithography tool](https://www.researchgate.net/publication/399865523_A_low-cost_open-access_two-photon_lithography_tool)." SPIE Photonics West, January 2026.
+
+**Note:** This link will be updated once the conference proceedings are published.

@@ -11,18 +11,23 @@ imported from config.py:
 - MAX_VOLTAGE is set from VOLTAGE_AMPLITUDES["aom"]
 
 To run:
-    python -m tests.aom_set_power_test
+    python tests/aom_set_power_test.py
 
 Requirements:
     - NI-DAQmx installed
     - DAQ device connected
 """
 
+import sys
 import tkinter as tk
+from pathlib import Path
 from tkinter import DoubleVar, Label, messagebox
 from typing import Optional
 
 import nidaqmx
+
+project_root = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(project_root))
 
 from config import DAQ_CHANNELS, VOLTAGE_AMPLITUDES
 

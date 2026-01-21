@@ -183,11 +183,11 @@ Joystick input is ignored while a print is running.
 
 ### `tests/aom_set_power_test.py`
 
-This test script allows manually sending a fixed analog voltage to a specified DAQ output channel. It's currently configured to control the AOM by setting a voltage between 0 and 1 V. This script can be used when testing and aligning the laser through the AOM. 
+This test script allows manually sending a fixed analog voltage to a specified DAQ output channel. It's currently configured to control the AOM by setting a voltage between 0 and the AOM voltage amplitude specified in `config.py`. This script can be used when testing and aligning the laser through the AOM. 
 
 To run:
 ```bash
-python -m tests.aom_set_power_test
+python tests/aom_set_power_test.py
 ```
 
 ## Contributing

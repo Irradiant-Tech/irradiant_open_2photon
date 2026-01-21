@@ -27,6 +27,6 @@ Below is an example of the Z buffer that gets produced, where `n` represents the
 
 ![Z Stage Control Signals](diagrams/software_overview/control_signal_z_stage.png)
 
-This is diagram is provided as an example. For stages that require position as the input, an equivalent Z control signal is generated and sent to the active Z stage, with the appropriate units applied on the y-axis. For piezo stages, this signal is expressed as voltage, whereas for motorized stages it is converted to a position command.
+This diagram is provided as an example. For stages that require position as the input, an equivalent Z control signal is generated and sent to the active Z stage, with the appropriate units applied on the y-axis. For piezo stages, this signal is expressed as voltage, whereas for motorized stages it is converted to a position command.
 
 For objective-mounted focus stages (e.g., Dover Motion DOF-5), the direction of motion is inverted relative to sample-mounted stages. While a sample-mounted Z stage moves downward to progress through printed layers, an objective-mounted stage must move upward, since the first printed plane corresponds to the bottom of the volume.

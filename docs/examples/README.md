@@ -27,3 +27,5 @@
 
 3D view (left) with gray slice plane and XY slice (right):
 ![Circular gradient](../diagrams/examples/gradient_circular.jpg)
+
+

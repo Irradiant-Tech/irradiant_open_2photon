@@ -59,7 +59,7 @@ Array values encode the relative exposure dose at each voxel.
 
 During printing, these normalized values are scaled by the configured AOM voltage amplitude in `config.py`, such that a value of 1.0 in the array corresponds to 100% of the maximum laser power defined in the system configuration. See [setup.md](docs/setup.md) for more details.
 
-#### See [docs/examples](docs/examples/examples.md) for input example files.
+#### See [docs/examples](docs/examples/README.md) for input example files.
 
 ## Running the Software
 
@@ -108,7 +108,7 @@ A dense, uniform matrix using a single input value will be printed.
 - Load a **3D NumPy (`.npy`) file** representing a voxelized print volume.
 - The array shape must be: `(matrix_y, matrix_x, matrix_z)`, corresponding to **Y (slow axis), X (fast axis), and Z (layers)**
 - When an NPY file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
-- Example input files can be found in the [docs/examples](docs/examples/examples.md) directory.
+- Example input files can be found in the [docs/examples](docs/examples/README.md) directory.
 
 ![Print File](docs/diagrams/gui/print_file.png)
 

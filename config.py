@@ -78,6 +78,12 @@ VOLTAGE_AMPLITUDES = {
 GALVO_SCALING = {"x": 613, "y": 748}  # Galvo scaling (µm/V), full range -1V to 1V
 GALVO_RECOVERY_TIME = 547 * 2e-6  # Galvo recovery time (s)
 
+# X galvo symmetric clip (blanking overshoot): allow X_GALVO_CLIP_EXTRA_FRACTION beyond effective
+# amplitude; clip magnitude capped at X_GALVO_CLIP_MAX_V.
+# GALVO_RECOVERY_TIME isn't large enough for x-galvo to respond to 50% extension period, but is sufficient for printing.
+X_GALVO_CLIP_EXTRA_FRACTION = 0.5
+X_GALVO_CLIP_MAX_V = 3.0  # (V), max clip magnitude
+
 AOM_POWER_RANGE = (0.0, 1.0)  # Min and max allowed powers for AOM
 
 MASK_TOLERANCE = 1e-10  # Mask tolerance to avoid floating-point noise

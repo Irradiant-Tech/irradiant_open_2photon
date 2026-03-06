@@ -5,14 +5,10 @@ def generate_x_galvo_output(
     print_height_px: int, scan_size: int, samplesBetweenLines: int
 ) -> np.ndarray:
     """Generates normalized X-galvo (fast axis) output signal."""
-    x_raster = np.linspace(
-        -1.0,
-        1.0,
-        scan_size,
-        dtype=np.float64,
-    )
-    x_blanking = np.full(samplesBetweenLines, -1.0, dtype=np.float64)
-    x_line = np.concatenate((x_blanking, x_raster))
+    n = samplesBetweenLines + scan_size
+    # start so that index samplesBetweenLines (first point of the raster) has value -1
+    start = -(2 * samplesBetweenLines + scan_size - 1) / max(1, scan_size - 1)
+    x_line = np.linspace(start, 1.0, n, dtype=np.float64)
     x_galvo_output = np.tile(x_line, print_height_px)
     return x_galvo_output
 

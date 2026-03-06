@@ -1,5 +1,4 @@
-import time
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 import torch
@@ -15,12 +14,11 @@ from print_preprocessing.matrix_processing import (
 
 
 def generate_signals_all_frames(
-    matrix: torch.Tensor,
+    matrix: Union[torch.Tensor, np.ndarray],
     samplesBetweenLines: int,
     z_step_nm: float,
     nm_per_volt: float,
     invert_scan_direction: bool = False,
-    logger=None,
 ) -> tuple[np.ndarray, np.ndarray, int]:
     # Convert input matrix to 64-bit tensor on GPU if it's not already a tensor
     if not isinstance(matrix, torch.Tensor):
@@ -31,32 +29,24 @@ def generate_signals_all_frames(
         print("converted matrix to float64")
 
     try:
-        start_time = time.time()
         # Process matrix in-place where possible
         matrix_voltage = get_AOM_voltage(matrix)  # Keep as tensor
-        print(f"get_AOM_voltage time: {time.time() - start_time}")
         del matrix  # Free input matrix
         torch.cuda.empty_cache()
-        start_time = time.time()
         Padded_matrix = pad_matrix_width(matrix_voltage, samplesBetweenLines)
-        print(f"pad_matrix_width time: {time.time() - start_time}")
         del matrix_voltage  # Free memory
         torch.cuda.empty_cache()
-        start_time = time.time()
         # Get line signals and filter in one pass
         LineSignals_tensor = matrix_3D_to_vector_list_and_filter(Padded_matrix)
-        print(f"matrix_3D_to_vector_list_and_filter time: {time.time() - start_time}")
         del Padded_matrix  # Free memory
         torch.cuda.empty_cache()
         num_points = LineSignals_tensor.shape[1]
         num_nonzero_frames = LineSignals_tensor.shape[0]
 
         # Generate Z signals only for non-zero frames
-        start_time = time.time()
         Z_Signals_tensor = generate_Z_signal_vectors(
             num_nonzero_frames, num_points, z_step_nm / nm_per_volt
         )
-        print(f"generate_Z_signal_vectors time: {time.time() - start_time}")
 
         # Invert signals if invert_scan_direction is True (in-place)
         if invert_scan_direction:
@@ -65,16 +55,13 @@ def generate_signals_all_frames(
             Z_Signals_tensor.copy_(torch.flip(Z_Signals_tensor, [0]))
 
         # Move tensors to CPU and convert to numpy arrays
-        start_time = time.time()
         LineSignals = LineSignals_tensor.to(torch.float64).cpu().numpy()
         Z_Signals = Z_Signals_tensor.to(torch.float64).cpu().numpy()
-        print(
-            f"move tensors to CPU64 and convert to numpy arrays time: {time.time() - start_time}"
-        )
 
         if num_nonzero_frames:
-            print(f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}")
-            print(f"Z_Signals max: {np.max(Z_Signals)}, min: {np.min(Z_Signals)}")
+            print(
+                f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}; Z_Signals max: {np.max(Z_Signals)}, min: {np.min(Z_Signals)}"
+            )
         else:
             print("WARNING: Print file is empty, nothing will be printed.")
 

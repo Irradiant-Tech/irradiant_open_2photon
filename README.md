@@ -108,6 +108,7 @@ A dense, uniform matrix using a single input value will be printed.
 - Load a **3D NumPy (`.npy`) file** representing a voxelized print volume.
 - The array shape must be: `(matrix_y, matrix_x, matrix_z)`, corresponding to **Y (slow axis), X (fast axis), and Z (layers)**
 - When an NPY file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
+- If the input NPY file has less than three dimensions, it will automatically be promoted to a 3D array with size 1 along any missing axes.
 - Example input files can be found in the [docs/examples](docs/examples/README.md) directory.
 
 ![Print File](docs/diagrams/gui/print_file.png)

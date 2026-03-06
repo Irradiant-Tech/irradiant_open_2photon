@@ -39,6 +39,7 @@ class PointscanThread(QThread):
             time.sleep(0.01)  # 10ms polling interval
 
         # Lock acquired - hold for entire print duration
+        error_occurred = False
         try:
             run_print_job(
                 z_stage=self.z_stage,
@@ -51,10 +52,15 @@ class PointscanThread(QThread):
                 FOV_Y_um=self.params["FOV_Y_um"],
             )
         except Exception as e:
-            self.error.emit(str(e))
+            error_occurred = True
+            print(f"\nPrint thread errored: {str(e)}")
         finally:
             self.movement_lock.unlock()
             self.finished.emit()
+            if self.stop_flag.stop:
+                print("\nPrint thread stopped by user")
+            elif not error_occurred:
+                print("\nPrint thread finished successfully")
 
     def stop(self) -> None:
         self.stop_flag.stop = True

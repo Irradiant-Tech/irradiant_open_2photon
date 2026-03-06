@@ -5,13 +5,8 @@ import nidaqmx.system
 import numpy as np
 from nidaqmx.constants import AcquisitionType
 
-from config import (
-    DAQ_CHANNEL_ORDER,
-    DAQ_CHANNELS,
-    DAQ_DEVICE,
-    TIMING,
-    VOLTAGE_AMPLITUDES,
-)
+from config import DAQ_CHANNEL_ORDER, DAQ_CHANNELS, DAQ_DEVICE, TIMING
+from utils.dtypes import ProcessingDataTypes
 from utils.scale_signals import scale_signals
 from utils.stop_flag import StopFlag
 
@@ -56,7 +51,7 @@ def execute_analog_output_daq(
             channel_3_z_piezo,
         ],
         amplitudes=channel_amplitudes,
-        dtype=np.float64,
+        dtype=ProcessingDataTypes.numpy_dtype,
         clip=True,
     )
 
@@ -99,7 +94,7 @@ def execute_analog_output_daq(
             with nidaqmx.Task() as task:
                 for channel in ao_channels:
                     task.ao_channels.add_ao_voltage_chan(channel)
-                task.write(np.zeros((4, 1)), auto_start=True)  # type: ignore
+                task.write(np.zeros((4, 1), dtype=ProcessingDataTypes.numpy_dtype), auto_start=True)  # type: ignore
         except Exception as cleanup_error:
             print(f"Failed to reset DAQ channels to 0V: {cleanup_error}")
 

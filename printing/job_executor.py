@@ -25,6 +25,7 @@ from print_preprocessing.signals import (
     filter_signals_by_reference,
     generate_signals_all_frames,
 )
+from utils.dtypes import ProcessingDataTypes
 from utils.scale_signals import scale_signals
 from utils.stop_flag import StopFlag
 
@@ -57,8 +58,8 @@ def run_print_job(
     )
 
     # Generate AOM and z-voltage signals for each frame
-    LineSignals, Z_Signals, num_points = generate_signals_all_frames(
-        torch.tensor(matrix_3D),
+    LineSignals, Z_Signals, _ = generate_signals_all_frames(
+        torch.tensor(matrix_3D, dtype=ProcessingDataTypes.torch_dtype),
         samplesBetweenLines,
         z_step_nm,
         nm_per_volt=1,
@@ -72,14 +73,16 @@ def run_print_job(
         )
     # Dover moves the objective upward (positive direction) as layers progress
     if isinstance(z_stage, DoverController):
-        Z_Signals = float(z_start) + np.array(Z_Signals)
+        Z_Signals = ProcessingDataTypes.cast_numpy(z_start) + Z_Signals
     else:
-        Z_Signals = float(z_start) - np.array(Z_Signals)
+        Z_Signals = ProcessingDataTypes.cast_numpy(z_start) - Z_Signals
+
+    # Define z steps in terms of voltage output by normalizing Z_Signals (contains position)
     Z_analog_out = Z_Signals.copy()
     if len(Z_analog_out) and np.max(np.abs(Z_analog_out)) > 0:
         Z_analog_out = Z_analog_out / np.max(np.abs(Z_analog_out))
 
-    # Generate signals for x and y galvos scaled from -1 to 1V
+    # Generate signals for x and y galvos scaled from -1 to 1
     x_galvo_output = generate_x_galvo_output(
         print_height_px, scan_size, samplesBetweenLines
     )
@@ -95,6 +98,9 @@ def run_print_job(
         amplitudes=[FOV_x_galvo_scaling, FOV_y_galvo_scaling],
     )
 
+    # Scaled signals are copies, delete x_galvo_output and y_galvo_output
+    del x_galvo_output, y_galvo_output
+
     # X galvo symmetric clip: magnitude = min(effective * (1 + extra), max V)
     effective_x_amplitude = FOV_x_galvo_scaling * VOLTAGE_AMPLITUDES["x_galvo"]
     x_galvo_clip_magnitude_v = min(
@@ -103,7 +109,14 @@ def run_print_job(
     )
     # Normalize x_galvo so ±1 = clip magnitude
     x_galvo_norm_scale = VOLTAGE_AMPLITUDES["x_galvo"] / x_galvo_clip_magnitude_v
-    x_galvo_scaled_normalized = np.clip(x_galvo_scaled * x_galvo_norm_scale, -1.0, 1.0)
+    x_galvo_scaled_normalized = np.clip(
+        x_galvo_scaled * x_galvo_norm_scale,
+        -1.0,
+        1.0,
+        dtype=ProcessingDataTypes.numpy_dtype,
+    )
+
+    del x_galvo_scaled
 
     # Per-channel voltage amplitudes for this print job (order: CHANNEL_ORDER)
     channel_amplitudes = [
@@ -126,15 +139,14 @@ def run_print_job(
 
     for z_frame in range(len(LineSignals)):
         if stop_flag.stop:
-            print("Print stopped by user")
             break
 
         print(f"z_frame {z_frame + 1}/{number_of_z_frames}")
-        target_z = float(
+        target_z = int(
             Z_Signals[z_frame, 0]
         )  # Extract scalar from array (all values in frame are same)
 
-        z_stage.move(int(target_z), wait_for_settled=True)
+        z_stage.move(target_z, wait_for_settled=True)
         final_pos = z_stage.get_position()
         print(f"   Z position after moving and settling: {final_pos} nm")
 

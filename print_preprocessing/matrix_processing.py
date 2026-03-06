@@ -1,7 +1,9 @@
 import torch
 
+from utils.dtypes import ProcessingDataTypes
+
 # Set device to GPU if available, otherwise CPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device_torch = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def pad_matrix_width(matrix_tensor: torch.Tensor, width_increase: int) -> torch.Tensor:
@@ -11,7 +13,9 @@ def pad_matrix_width(matrix_tensor: torch.Tensor, width_increase: int) -> torch.
         matrix_tensor.shape[1] + width_increase,
         matrix_tensor.shape[2],
     )
-    expanded_tensor = torch.zeros(output_shape, dtype=torch.float16, device=device)
+    expanded_tensor = torch.zeros(
+        output_shape, dtype=ProcessingDataTypes.torch_dtype, device=device_torch
+    )
 
     # Fill the right part with the input matrix (more efficient than cat)
     expanded_tensor[:, width_increase:, :] = matrix_tensor
@@ -42,11 +46,15 @@ def generate_Z_signal_vectors(
 ) -> torch.Tensor:
     # Create and reshape in one operation
     vectors = torch.zeros(
-        (num_vectors, vector_length), dtype=torch.float64, device=device
+        (num_vectors, vector_length),
+        dtype=ProcessingDataTypes.torch_dtype,
+        device=device_torch,
     )
 
     # Fill with values in-place
-    arange_tensor = torch.arange(num_vectors, dtype=torch.float64, device=device)
+    arange_tensor = torch.arange(
+        num_vectors, dtype=ProcessingDataTypes.torch_dtype, device=device_torch
+    )
     vectors[:, 0] = arange_tensor * step_value
     del arange_tensor  # Free temporary tensor
 

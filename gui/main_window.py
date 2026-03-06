@@ -45,6 +45,7 @@ from hardware.stage.mock_controller import MockController
 from hardware.stage.pdxc2_controller import PDXC2Controller
 from hardware.stage.xeryon.xeryon_controller import XeryonController
 from printing.job_thread import LaserThread, PointscanThread
+from utils.dtypes import ProcessingDataTypes
 
 
 class IntegratedGUI(QMainWindow):
@@ -549,7 +550,9 @@ class IntegratedGUI(QMainWindow):
                         self.pointscan_thread = PointscanThread(
                             self.z_controller, self.daq_connected, self.movement_lock
                         )
-                        self.pointscan_thread.matrix = matrix_3D
+                        self.pointscan_thread.matrix = matrix_3D.astype(
+                            ProcessingDataTypes.numpy_dtype
+                        )
                         self.pointscan_thread.params = {
                             "z_step_microns": z_step,
                             "timePerPixel": time_per_pixel,

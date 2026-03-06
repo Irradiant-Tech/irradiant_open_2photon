@@ -93,6 +93,10 @@ LUT_CSV_PATH = str(
     / "print_preprocessing/calibration_files/aom_voltage_lut_interpolate.csv"
 )
 
+# Floating-point precision used in processing pipeline for loading, processing, and casting matrices
+# FP32 is the minimum precision required due to large error amplification during AOM voltage conversion
+# near 0 and 1 V when using FP16.
+PROCESSING_DTYPE_STR = "float32"
 
 # ============================================================================
 # Timing Configuration

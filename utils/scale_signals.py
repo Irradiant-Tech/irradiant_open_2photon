@@ -1,12 +1,15 @@
 from typing import List
 
 import numpy as np
+from numpy.typing import DTypeLike
+
+from utils.dtypes import ProcessingDataTypes
 
 
 def scale_signals(
     signals: List[np.ndarray],
     amplitudes: List[float],
-    dtype: type = np.float64,
+    dtype: DTypeLike = ProcessingDataTypes.numpy_dtype,
     clip: bool = False,
 ) -> List[np.ndarray]:
     """

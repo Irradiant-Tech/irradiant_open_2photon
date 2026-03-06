@@ -3,14 +3,13 @@ from typing import List, Tuple, Union
 import numpy as np
 import torch
 
-# Set device to GPU if available, otherwise CPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 from print_preprocessing.aom_voltage import get_AOM_voltage
 from print_preprocessing.matrix_processing import (
     generate_Z_signal_vectors,
     matrix_3D_to_vector_list_and_filter,
     pad_matrix_width,
 )
+from utils.dtypes import ProcessingDataTypes
 
 
 def generate_signals_all_frames(
@@ -20,26 +19,28 @@ def generate_signals_all_frames(
     nm_per_volt: float,
     invert_scan_direction: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, int]:
-    # Convert input matrix to 64-bit tensor on GPU if it's not already a tensor
+    # Convert input matrix to tensor
     if not isinstance(matrix, torch.Tensor):
         matrix = torch.from_numpy(matrix)
-        print("converted matrix to tensor")
-    if matrix.dtype != torch.float64:
-        matrix = matrix.to(torch.float64)
-        print("converted matrix to float64")
+        print("Converted matrix to tensor")
+
+    # Convert matrix to correct dtype
+    if matrix.dtype != ProcessingDataTypes.torch_dtype:
+        matrix = matrix.to(ProcessingDataTypes.torch_dtype)
+        print(f"Converted matrix to {ProcessingDataTypes.torch_dtype}")
 
     try:
-        # Process matrix in-place where possible
-        matrix_voltage = get_AOM_voltage(matrix)  # Keep as tensor
-        del matrix  # Free input matrix
+        # Convert matrix to voltage (in-place) and pad for blanking
+        get_AOM_voltage(matrix)
+        Padded_matrix = pad_matrix_width(matrix, samplesBetweenLines)
+        del matrix  # Free memory
         torch.cuda.empty_cache()
-        Padded_matrix = pad_matrix_width(matrix_voltage, samplesBetweenLines)
-        del matrix_voltage  # Free memory
-        torch.cuda.empty_cache()
-        # Get line signals and filter in one pass
+
+        # Create flattened line signals and filter
         LineSignals_tensor = matrix_3D_to_vector_list_and_filter(Padded_matrix)
         del Padded_matrix  # Free memory
         torch.cuda.empty_cache()
+
         num_points = LineSignals_tensor.shape[1]
         num_nonzero_frames = LineSignals_tensor.shape[0]
 
@@ -55,12 +56,15 @@ def generate_signals_all_frames(
             Z_Signals_tensor.copy_(torch.flip(Z_Signals_tensor, [0]))
 
         # Move tensors to CPU and convert to numpy arrays
-        LineSignals = LineSignals_tensor.to(torch.float64).cpu().numpy()
-        Z_Signals = Z_Signals_tensor.to(torch.float64).cpu().numpy()
+        LineSignals = LineSignals_tensor.cpu().numpy()
+        del LineSignals_tensor
+        Z_Signals = Z_Signals_tensor.cpu().numpy()
+        del Z_Signals_tensor
 
         if num_nonzero_frames:
             print(
-                f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}; Z_Signals max: {np.max(Z_Signals)}, min: {np.min(Z_Signals)}"
+                f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}, dtype: {LineSignals.dtype}; "
+                f"Z_Signals max: {np.max(Z_Signals)}, min: {np.min(Z_Signals)}; dtype: {Z_Signals.dtype}"
             )
         else:
             print("WARNING: Print file is empty, nothing will be printed.")

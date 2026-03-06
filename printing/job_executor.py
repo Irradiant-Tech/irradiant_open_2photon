@@ -8,6 +8,9 @@ from config import (
     DEFAULT_PRINT_PARAMS,
     GALVO_RECOVERY_TIME,
     GALVO_SCALING,
+    VOLTAGE_AMPLITUDES,
+    X_GALVO_CLIP_EXTRA_FRACTION,
+    X_GALVO_CLIP_MAX_V,
 )
 from hardware.daq import execute_analog_output_daq
 from hardware.stage.dover_controller import DoverController
@@ -49,6 +52,10 @@ def run_print_job(
     samplesBetweenLines = int(timeBetweenLines / timePerPixel)
     sample_rate_hz = float(1 / timePerPixel)
 
+    print(
+        f"\nStarting print job. FOV_X_um: {FOV_X_um}, FOV_Y_um: {FOV_Y_um}, z_step_nm: {z_step_nm}, time_per_pixel_us: {timePerPixel}"
+    )
+
     # Generate AOM and z-voltage signals for each frame
     LineSignals, Z_Signals, num_points = generate_signals_all_frames(
         torch.tensor(matrix_3D),
@@ -88,10 +95,28 @@ def run_print_job(
         amplitudes=[FOV_x_galvo_scaling, FOV_y_galvo_scaling],
     )
 
+    # X galvo symmetric clip: magnitude = min(effective * (1 + extra), max V)
+    effective_x_amplitude = FOV_x_galvo_scaling * VOLTAGE_AMPLITUDES["x_galvo"]
+    x_galvo_clip_magnitude_v = min(
+        effective_x_amplitude * (1 + X_GALVO_CLIP_EXTRA_FRACTION),
+        X_GALVO_CLIP_MAX_V,
+    )
+    # Normalize x_galvo so ±1 = clip magnitude
+    x_galvo_norm_scale = VOLTAGE_AMPLITUDES["x_galvo"] / x_galvo_clip_magnitude_v
+    x_galvo_scaled_normalized = np.clip(x_galvo_scaled * x_galvo_norm_scale, -1.0, 1.0)
+
+    # Per-channel voltage amplitudes for this print job (order: CHANNEL_ORDER)
+    channel_amplitudes = [
+        x_galvo_clip_magnitude_v,
+        VOLTAGE_AMPLITUDES["y_galvo"],
+        VOLTAGE_AMPLITUDES["aom"],
+        VOLTAGE_AMPLITUDES["z_piezo"],
+    ]
+
     # Execute analog signals for each frame
     start_time = time.time()
-    print(f"Starting print job with {len(LineSignals)} z frames")
-    print(f"z_start position: {z_start} nm")
+    number_of_z_frames = len(LineSignals)
+    print(f"Total number of z frames: {number_of_z_frames}")
 
     # Warning if no device connected for analog output
     if not daq_connected:
@@ -104,15 +129,14 @@ def run_print_job(
             print("Print stopped by user")
             break
 
-        print(f"z_frame {z_frame}/{len(LineSignals)-1}")
+        print(f"z_frame {z_frame + 1}/{number_of_z_frames}")
         target_z = float(
             Z_Signals[z_frame, 0]
         )  # Extract scalar from array (all values in frame are same)
-        current_pos = z_stage.get_position()
-        print(f"   Current Z position: {current_pos} nm, Target Z: {target_z} nm")
+
         z_stage.move(int(target_z), wait_for_settled=True)
         final_pos = z_stage.get_position()
-        print(f"   Final Z position after moving and settling: {final_pos} nm")
+        print(f"   Z position after moving and settling: {final_pos} nm")
 
         aom_frame = LineSignals[z_frame]
         z_piezo_frame = Z_analog_out[z_frame]
@@ -124,7 +148,7 @@ def run_print_job(
             z_piezo_filtered_frame,
         ) = filter_signals_by_reference(
             aom_frame,
-            [x_galvo_scaled, y_galvo_scaled, z_piezo_frame],
+            [x_galvo_scaled_normalized, y_galvo_scaled, z_piezo_frame],
             samplesBetweenLines + scan_size,
         )
 
@@ -136,16 +160,14 @@ def run_print_job(
                 aom_filtered_frame,
                 z_piezo_filtered_frame,
                 stop_flag,
+                channel_amplitudes,
             ):
                 break
         else:
             print(
-                f"Skipping analog output (no device), frame {z_frame} movement completed"
+                f"   Skipping analog output (no device), frame {z_frame + 1} movement completed"
             )
 
-    print(
-        "Print completed successfully."
-        if not stop_flag.stop
-        else "Print stopped by user during analog output."
-    )
-    print(f"Time taken to print: {time.time() - start_time}")
+    if not stop_flag.stop:
+        print("Print job finished")
+    print(f"Time taken to print: {time.time() - start_time:.2f} seconds")

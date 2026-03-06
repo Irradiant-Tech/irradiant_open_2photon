@@ -31,6 +31,7 @@ def execute_analog_output_daq(
     channel_2_aom: np.ndarray,
     channel_3_z_piezo: np.ndarray,
     stop_flag: StopFlag,
+    channel_amplitudes: list[float],
 ) -> bool:
     """
     Outputs synchronized analog voltages to four DAQ channels at a given frequency.
@@ -41,12 +42,12 @@ def execute_analog_output_daq(
         channel_2_aom: AOM signal (laser intensity)
         channel_3_z_piezo: Z-piezo signal
 
+    channel_amplitudes: [x_galvo, y_galvo, aom, z_piezo] voltage amplitude (V) per channel.
     All buffers must be equal length and scaled to their voltage ranges.
     Returns True if all samples are written successfully, False if stopped or failed.
     """
     num_samples = len(channel_0_x_galvo)
 
-    # Scale all channels to voltage ranges
     scaled_channels = scale_signals(
         signals=[
             channel_0_x_galvo,
@@ -54,7 +55,7 @@ def execute_analog_output_daq(
             channel_2_aom,
             channel_3_z_piezo,
         ],
-        amplitudes=[VOLTAGE_AMPLITUDES[ch] for ch in DAQ_CHANNEL_ORDER],
+        amplitudes=channel_amplitudes,
         dtype=np.float64,
         clip=True,
     )

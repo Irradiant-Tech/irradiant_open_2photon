@@ -229,6 +229,14 @@ VOLTAGE_AMPLITUDES = {
 }
 ```
 
+#### X Galvo Clip Fraction
+At the start of each scan line, the X-galvo requires time to accelerate to a constant scan velocity. To compensate for this delayed mechanical response, the generated waveform extends slightly beyond the effective scan amplitude into the blanking region while the AOM is off. This allows the galvo to accelerate before entering the active scan region used for printing. The beginning of this extended portion of the waveform is clipped to a voltage specified in `config.py`.
+
+The following parameters should be adjusted so that a constant scan speed is observed during the raster:
+- `X_GALVO_CLIP_EXTRA_FRACTION`: fraction of the effective scan amplitude by which the signal is extended beyond the scan range before the start of each X raster.
+- `X_GALVO_CLIP_MAX_V`: Maximum absolute voltage allowed for the X-galvo control signal. If the extension defined by `X_GALVO_CLIP_EXTRA_FRACTION` exceeds this voltage, the signal is clipped at this limit.
+- `GALVO_RECOVERY_TIME`: This time should ensure that the encoders have enough time to respond to the additional motion from `X_GALVO_CLIP_EXTRA_FRACTION`. Increase this if the X-galvo does not complete the full extension before the scan starts.
+
 #### AOM power scaling
 The expected input format for printing is **voxel values, which are expected to be normalized between 0 and 1** and are interpreted as **relative laser power**. See [README.md &rarr; Input File Format](../README.md) for more details.
 

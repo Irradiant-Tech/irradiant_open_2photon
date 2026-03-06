@@ -24,20 +24,12 @@ def matrix_3D_to_vector_list_and_filter(matrix_tensor: torch.Tensor) -> torch.Te
     reshaped = matrix_tensor.permute(2, 0, 1).reshape(matrix_tensor.shape[2], -1)
     del matrix_tensor  # Free original tensor since we only need the view
 
-    # Pre-allocate final tensor with space for data and zero column
-    result = torch.zeros(
-        (reshaped.shape[0], reshaped.shape[1]), dtype=torch.float16, device=device
-    )
-    # Copy data excluding first 3 entries directly (no intermediate tensors)
-    result[:, :-1] = reshaped[:, 1:]  # FOR PS2 NO SYNCING SO Only 1 pixel offset
-    del reshaped  # Free the view immediately
-
     # Find non-zero vectors efficiently
-    nonzero_mask = torch.any(result != 0, dim=1)
+    nonzero_mask = torch.any(reshaped != 0, dim=1)
 
     # Filter out zero vectors (creates new tensor, but we need it for return)
-    filtered_vectors = result[nonzero_mask]
-    del result  # Free intermediate result
+    filtered_vectors = reshaped[nonzero_mask]
+    del reshaped  # Free intermediate tensor
     del nonzero_mask  # Free mask tensor
 
     torch.cuda.empty_cache()  # Clear any unused memory in GPU cache

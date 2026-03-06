@@ -540,7 +540,9 @@ class IntegratedGUI(QMainWindow):
                                 np.ones((matrix_y, matrix_x, matrix_z)) * dense_value
                             )
                         else:
-                            matrix_3D = np.load(self.npy_path_input.text())
+                            matrix_3D = np.atleast_3d(
+                                np.load(self.npy_path_input.text())
+                            )
 
                         self.initial_z_pos = self.z_controller.position
 
@@ -556,7 +558,6 @@ class IntegratedGUI(QMainWindow):
                         }
 
                         self.pointscan_thread.finished.connect(self.onPointscanFinished)
-                        self.pointscan_thread.error.connect(self.onPointscanError)
                         self.pointscan_thread.start()
 
                         self.is_printing = True
@@ -579,8 +580,6 @@ class IntegratedGUI(QMainWindow):
             self.pointscan_button.setText("Start Print")
 
     def onPointscanFinished(self) -> None:
-        self.is_printing = False
-        self.pointscan_button.setText("Start Print")
         if self.movement_lock.tryLock():
             try:
                 self.z_controller.move(self.initial_z_pos)
@@ -589,8 +588,9 @@ class IntegratedGUI(QMainWindow):
         else:
             print("[GUI] WARNING: Could not acquire lock for post-print Z movement")
 
-    def onPointscanError(self, error_msg: str) -> None:
-        print(f"Error during print: {error_msg}")
+        # Update GUI state after movement completes
+        self.is_printing = False
+        self.pointscan_button.setText("Start Print")
 
     def toggleLaser(self) -> None:
         if self.is_printing:

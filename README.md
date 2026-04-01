@@ -200,8 +200,9 @@ Please see [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## Citation
 
-If you use this software in your research, please cite:
+If you use this software or system design in academic work, please cite our SPIE proceedings paper:
 
-Shabahang, S., et al. "[A low-cost, open-access two-photon lithography tool](https://www.researchgate.net/publication/399865523_A_low-cost_open-access_two-photon_lithography_tool)." SPIE Photonics West, January 2026.
+> Shabahang, S., Cao, Z., Jain, A., Ahmad, S. I., Bolotskaya, E., Gavronskiy, L., Chin, C., Yavuz, B. E., Sullivan, P. A., Costello, J., & Prisament, J. M. (2026). A low-cost, open-access two-photon lithography tool. In *Advanced Fabrication Technologies for Micro/Nano Optics and Photonics XIX* (Vol. 13899, pp. 33–39). SPIE.
 
-**Note:** This link will be updated once the conference proceedings are published.
+- **Published proceedings:** [DOI 10.1117/12.3079209](https://doi.org/10.1117/12.3079209) — SPIE Digital Library (canonical citation target; full text may require institutional access or purchase).
+- **Author-posted copy:** [ResearchGate](https://www.researchgate.net/publication/399865523_A_low-cost_open-access_two-photon_lithography_tool) — same conference paper, available without paywall for readers who cannot access SPIE.

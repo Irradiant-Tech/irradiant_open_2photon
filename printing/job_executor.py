@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 import numpy as np
 import torch
@@ -57,30 +58,32 @@ def run_print_job(
         f"\nStarting print job. FOV_X_um: {FOV_X_um}, FOV_Y_um: {FOV_Y_um}, z_step_nm: {z_step_nm}, time_per_pixel_us: {timePerPixel}"
     )
 
-    # Generate AOM and z-voltage signals for each frame
-    LineSignals, Z_Signals, _ = generate_signals_all_frames(
+    # Generate AOM signals + original z-indices of non-blank frames
+    LineSignals, z_indices = generate_signals_all_frames(
         torch.tensor(matrix_3D, dtype=ProcessingDataTypes.torch_dtype),
         samplesBetweenLines,
-        z_step_nm,
-        nm_per_volt=1,
-        invert_scan_direction=False,
     )
+    # Map original z-axis index -> position in filtered arrays. The loop below uses
+    # `.get(orig)` for one-shot "is blank? where in filtered arrays?" lookup.
+    orig_to_filtered = {idx: i for i, idx in enumerate(z_indices.tolist())}
 
     z_start = z_stage.get_position()
     if z_start is None:
         raise RuntimeError(
             f"Failed to get initial Z position from {z_stage.__class__.__name__}"
         )
-    # Dover moves the objective upward (positive direction) as layers progress
-    if isinstance(z_stage, DoverController):
-        Z_Signals = ProcessingDataTypes.cast_numpy(z_start) + Z_Signals
-    else:
-        Z_Signals = ProcessingDataTypes.cast_numpy(z_start) - Z_Signals
+    # Per-frame absolute stage targets, 1D float (num_nonzero,). Dover moves the
+    # objective upward as layers progress; other stages move downward.
+    sign = 1 if isinstance(z_stage, DoverController) else -1
+    target_zs = (z_start + sign * z_indices * z_step_nm).astype(
+        ProcessingDataTypes.numpy_dtype
+    )
 
-    # Define z steps in terms of voltage output by normalizing Z_Signals (contains position)
-    Z_analog_out = Z_Signals.copy()
-    if len(Z_analog_out) and np.max(np.abs(Z_analog_out)) > 0:
-        Z_analog_out = Z_analog_out / np.max(np.abs(Z_analog_out))
+    # Per-frame z-piezo voltage, 1D float (num_nonzero,), normalized to ±1.
+    if len(target_zs) and np.max(np.abs(target_zs)) > 0:
+        z_normalized = target_zs / np.max(np.abs(target_zs))
+    else:
+        z_normalized = target_zs.copy()
 
     # Generate signals for x and y galvos scaled from -1 to 1
     x_galvo_output = generate_x_galvo_output(
@@ -128,8 +131,10 @@ def run_print_job(
 
     # Execute analog signals for each frame
     start_time = time.time()
-    number_of_z_frames = len(LineSignals)
-    print(f"Total number of z frames: {number_of_z_frames}")
+    number_of_z_frames = matrix_3D.shape[2]
+    print(
+        f"Total number of z frames: {number_of_z_frames}, nonzero z frames: {len(LineSignals)}"
+    )
 
     # Warning if no device connected for analog output
     if not daq_connected:
@@ -137,21 +142,27 @@ def run_print_job(
             "No device connected to execute analog output. Movement will still be tested."
         )
 
-    for z_frame in range(len(LineSignals)):
+    # March through the original z-axis. Blank frames log and skip; non-blank frames
+    # take their filtered position from the orig->filtered dict.
+    for orig in range(number_of_z_frames):
         if stop_flag.stop:
             break
 
-        print(f"z_frame {z_frame + 1}/{number_of_z_frames}")
-        target_z = int(
-            Z_Signals[z_frame, 0]
-        )  # Extract scalar from array (all values in frame are same)
+        filtered_idx = orig_to_filtered.get(orig)
+        if filtered_idx is None:
+            print(f"z_frame {orig + 1}/{number_of_z_frames}: blank frame skipped")
+            continue
+
+        print(f"z_frame {orig + 1}/{number_of_z_frames}")
+        target_z = int(target_zs[filtered_idx])
 
         z_stage.move(target_z, wait_for_settled=True)
         final_pos = z_stage.get_position()
         print(f"   Z position after moving and settling: {final_pos} nm")
 
-        aom_frame = LineSignals[z_frame]
-        z_piezo_frame = Z_analog_out[z_frame]
+        aom_frame = LineSignals[filtered_idx]
+        # z-piezo is a constant DC value for the whole frame
+        z_piezo_frame = np.full_like(aom_frame, z_normalized[filtered_idx])
 
         # Filter signals based on AOM being on/off
         aom_filtered_frame, (
@@ -177,9 +188,11 @@ def run_print_job(
                 break
         else:
             print(
-                f"   Skipping analog output (no device), frame {z_frame + 1} movement completed"
+                f"   Skipping analog output (no device), frame {orig + 1} movement completed"
             )
 
     if not stop_flag.stop:
-        print("Print job finished")
-    print(f"Time taken to print: {time.time() - start_time:.2f} seconds")
+        print("Print job finished successfully")
+    print(
+        f"Time taken to print item: {timedelta(seconds=round(time.time() - start_time))}"
+    )

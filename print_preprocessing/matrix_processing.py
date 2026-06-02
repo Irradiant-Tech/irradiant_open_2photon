@@ -23,13 +23,18 @@ def pad_matrix_width(matrix_tensor: torch.Tensor, width_increase: int) -> torch.
     return expanded_tensor
 
 
-def matrix_3D_to_vector_list_and_filter(matrix_tensor: torch.Tensor) -> torch.Tensor:
+def matrix_3D_to_vector_list_and_filter(
+    matrix_tensor: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
     # Create view with permuted dimensions (view, no memory allocated)
     reshaped = matrix_tensor.permute(2, 0, 1).reshape(matrix_tensor.shape[2], -1)
     del matrix_tensor  # Free original tensor since we only need the view
 
     # Find non-zero vectors efficiently
     nonzero_mask = torch.any(reshaped != 0, dim=1)
+
+    # Capture original z-indices of surviving frames before discarding the mask
+    z_indices = torch.nonzero(nonzero_mask, as_tuple=False).flatten()
 
     # Filter out zero vectors (creates new tensor, but we need it for return)
     filtered_vectors = reshaped[nonzero_mask]
@@ -38,28 +43,4 @@ def matrix_3D_to_vector_list_and_filter(matrix_tensor: torch.Tensor) -> torch.Te
 
     torch.cuda.empty_cache()  # Clear any unused memory in GPU cache
 
-    return filtered_vectors
-
-
-def generate_Z_signal_vectors(
-    num_vectors: int, vector_length: int, step_value: float
-) -> torch.Tensor:
-    # Create and reshape in one operation
-    vectors = torch.zeros(
-        (num_vectors, vector_length),
-        dtype=ProcessingDataTypes.torch_dtype,
-        device=device_torch,
-    )
-
-    # Fill with values in-place
-    arange_tensor = torch.arange(
-        num_vectors, dtype=ProcessingDataTypes.torch_dtype, device=device_torch
-    )
-    vectors[:, 0] = arange_tensor * step_value
-    del arange_tensor  # Free temporary tensor
-
-    # Broadcast the first column to all other columns (in-place)
-    vectors[:, 1:] = vectors[:, :1]  # This is a view operation
-
-    torch.cuda.empty_cache()  # Clear any unused memory in GPU cache
-    return vectors
+    return filtered_vectors, z_indices

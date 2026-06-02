@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 import numpy as np
 from PyQt5.QtCore import QMutex, QThread, pyqtSignal
@@ -32,6 +33,8 @@ class PointscanThread(QThread):
         self.movement_lock = movement_lock
 
     def run(self) -> None:
+        thread_start_time = time.time()
+
         # Acquire lock with stop_flag checking - allows immediate stop even while waiting
         while not self.movement_lock.tryLock():
             if self.stop_flag.stop:
@@ -61,6 +64,9 @@ class PointscanThread(QThread):
                 print("\nPrint thread stopped by user")
             elif not error_occurred:
                 print("\nPrint thread finished successfully")
+                print(
+                    f"Time taken to run print thread: {timedelta(seconds=round(time.time() - thread_start_time))}"
+                )
 
     def stop(self) -> None:
         self.stop_flag.stop = True

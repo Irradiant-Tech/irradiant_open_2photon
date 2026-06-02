@@ -5,7 +5,6 @@ import torch
 
 from print_preprocessing.aom_voltage import get_AOM_voltage
 from print_preprocessing.matrix_processing import (
-    generate_Z_signal_vectors,
     matrix_3D_to_vector_list_and_filter,
     pad_matrix_width,
 )
@@ -15,10 +14,16 @@ from utils.dtypes import ProcessingDataTypes
 def generate_signals_all_frames(
     matrix: Union[torch.Tensor, np.ndarray],
     samplesBetweenLines: int,
-    z_step_nm: float,
-    nm_per_volt: float,
-    invert_scan_direction: bool = False,
-) -> tuple[np.ndarray, np.ndarray, int]:
+) -> tuple[np.ndarray, np.ndarray]:
+    """Generate AOM voltage signals and original z-indices for non-blank frames.
+
+    Returns:
+        LineSignals: 2D float (num_nonzero_frames, num_points), AOM voltage per frame.
+        z_indices:   1D int  (num_nonzero_frames,), original z-axis index of each
+                     non-blank frame in matrix-order. Caller multiplies by z-step
+                     to get per-frame stage targets and uses the indices to log
+                     blank-frame skips.
+    """
     # Convert input matrix to tensor
     if not isinstance(matrix, torch.Tensor):
         matrix = torch.from_numpy(matrix)
@@ -36,40 +41,30 @@ def generate_signals_all_frames(
         del matrix  # Free memory
         torch.cuda.empty_cache()
 
-        # Create flattened line signals and filter
-        LineSignals_tensor = matrix_3D_to_vector_list_and_filter(Padded_matrix)
+        # Create flattened line signals and filter, keeping original z-indices
+        LineSignals_tensor, z_indices_tensor = matrix_3D_to_vector_list_and_filter(
+            Padded_matrix
+        )
         del Padded_matrix  # Free memory
         torch.cuda.empty_cache()
 
-        num_points = LineSignals_tensor.shape[1]
         num_nonzero_frames = LineSignals_tensor.shape[0]
-
-        # Generate Z signals only for non-zero frames
-        Z_Signals_tensor = generate_Z_signal_vectors(
-            num_nonzero_frames, num_points, z_step_nm / nm_per_volt
-        )
-
-        # Invert signals if invert_scan_direction is True (in-place)
-        if invert_scan_direction:
-            # Create flipped views and copy in-place
-            LineSignals_tensor.copy_(torch.flip(LineSignals_tensor, [0]))
-            Z_Signals_tensor.copy_(torch.flip(Z_Signals_tensor, [0]))
 
         # Move tensors to CPU and convert to numpy arrays
         LineSignals = LineSignals_tensor.cpu().numpy()
         del LineSignals_tensor
-        Z_Signals = Z_Signals_tensor.cpu().numpy()
-        del Z_Signals_tensor
+        z_indices = z_indices_tensor.cpu().numpy()
+        del z_indices_tensor
 
         if num_nonzero_frames:
             print(
                 f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}, dtype: {LineSignals.dtype}; "
-                f"Z_Signals max: {np.max(Z_Signals)}, min: {np.min(Z_Signals)}; dtype: {Z_Signals.dtype}"
+                f"num_nonzero_frames: {num_nonzero_frames}, original z range: [{int(z_indices[0])}..{int(z_indices[-1])}]"
             )
         else:
             print("WARNING: Print file is empty, nothing will be printed.")
 
-        return LineSignals, Z_Signals, num_points
+        return LineSignals, z_indices
     except Exception as e:
         raise e
 

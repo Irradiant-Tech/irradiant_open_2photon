@@ -205,7 +205,7 @@ DOVER_CONFIG = {
     "config_filename": "Instrument.cfg",
     "settling": {
         "poll_interval": 0.015,  # time between position checks (s)
-        "duration": 0.80,  # time of stability required (s)
+        "duration": 0.250,  # time of stability required (s)
         "settling_tolerance": 30,  # tolerance (nm) absolute not +-
         "timeout": 10.0,  # maximum time to wait for settling (s)
     },
@@ -240,4 +240,11 @@ JOYSTICK_CONFIG = {
     "base_position_scale_xy": 500000,  # Position scale for X/Y axes (nm/joystick unit)
     "base_position_scale_z": 50000,  # Position scale for Z axis (nm/joystick unit)
     "fine_control_multiplier": 0.1,  # Multiplier for fine control mode (unitless)
+    "reconnect_interval": 2.0,  # Time between joystick reconnect attempts (s)
+    "axes": {"x": 0, "y": 1, "z": 4},  # Joystick axes mapping
+    "buttons": {
+        "laser": 0,
+        "pointscan": 1,
+        "fine_control": 5,
+    },  # Joystick buttons mapping
 }

@@ -173,7 +173,7 @@ If a joystick is connected, it is enabled automatically.
 |---------|--------|
 | Left Stick: Axis 0 | X motion |
 | Left Stick: Axis 1 | Y motion |
-| Right Stick: Axis 3 | Z motion |
+| Right Stick: Axis 4 | Z motion |
 | Button 0 | Toggle laser |
 | Button 1 | Start / stop print |
 | Button 5 (hold) | Fine control mode |

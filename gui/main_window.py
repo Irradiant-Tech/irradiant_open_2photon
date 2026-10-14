@@ -718,7 +718,6 @@ class IntegratedGUI(QMainWindow):
 
         if self.joystick_thread and self.joystick_thread.isRunning():
             self.joystick_thread.stop()
-            self.joystick_thread.wait()
 
         for controller in self.controllers:
             controller.close()

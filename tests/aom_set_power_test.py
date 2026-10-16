@@ -6,7 +6,7 @@ values from 0 to +Amp on the AOM channel.
 
 The channel and voltage limits used in this script are defined using values
 imported from config.py:
-- CHANNEL is set from DAQ_CHANNELS["aom"]
+- CHANNEL is set from CHANNELS["aom"]["DAQ"]
 - MIN_VOLTAGE is fixed at 0.0 V
 - MAX_VOLTAGE is set from VOLTAGE_AMPLITUDES["aom"]
 
@@ -29,10 +29,10 @@ import nidaqmx
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from config import DAQ_CHANNELS, VOLTAGE_AMPLITUDES
+from config import CHANNELS, VOLTAGE_AMPLITUDES
 
 # AOM channel definitions taken from config.py
-CHANNEL = DAQ_CHANNELS["aom"]
+CHANNEL = CHANNELS["aom"]["DAQ"]
 MIN_VOLTAGE = 0.0
 MAX_VOLTAGE = VOLTAGE_AMPLITUDES["aom"]
 

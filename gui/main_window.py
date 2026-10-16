@@ -38,12 +38,12 @@ from config import (
     VOLTAGE_AMPLITUDES,
     XERYON_CONFIG,
 )
-from hardware.daq import is_daq_connected
 from hardware.joystick import JoystickThread
 from hardware.stage.dover_controller import DoverController, shutdown_motion_synergy_api
 from hardware.stage.mock_controller import MockController
 from hardware.stage.pdxc2_controller import PDXC2Controller
 from hardware.stage.xeryon.xeryon_controller import XeryonController
+from hardware.voltage_device.voltage_devices import get_voltage_device
 from printing.job_thread import LaserThread, PointscanThread
 from utils.dtypes import ProcessingDataTypes
 
@@ -57,12 +57,7 @@ class IntegratedGUI(QMainWindow):
         self.laser_thread = None
         self.state_file = STATE_FILE
         self.initial_z_pos = 0
-        self.daq_connected = is_daq_connected()
-        print(
-            f"Using DAQ for voltage output."
-            if self.daq_connected
-            else "No voltage device connected."
-        )
+        self.voltage_device, _ = get_voltage_device()
         # Use real controllers if connected, otherwise MockController
         # Priority: Xeryon > PDXC2 > Dover > Mock (only need to try Dover during homing)
         xeryon_connected = XeryonController.is_connected("")
@@ -548,7 +543,7 @@ class IntegratedGUI(QMainWindow):
                         self.initial_z_pos = self.z_controller.position
 
                         self.pointscan_thread = PointscanThread(
-                            self.z_controller, self.daq_connected, self.movement_lock
+                            self.z_controller, self.voltage_device, self.movement_lock
                         )
                         self.pointscan_thread.matrix = matrix_3D.astype(
                             ProcessingDataTypes.numpy_dtype
@@ -606,7 +601,7 @@ class IntegratedGUI(QMainWindow):
             ):
                 # Turn laser ON using maximum aom channel amplitude
                 self.laser_thread = LaserThread(
-                    daq_connected=self.daq_connected,
+                    voltage_device=self.voltage_device,
                     voltage=VOLTAGE_AMPLITUDES["aom"],
                     channel="aom",
                 )

@@ -200,11 +200,11 @@ Each analog output channel must be correctly mapped to its corresponding physica
     - For example, `ao0` should be wired to the X galvo, `ao1` to the Y galvo, and so on.
 
 ```python
-DAQ_CHANNELS = {
-    "x_galvo": f"{DAQ_DEVICE}/ao0",
-    "y_galvo": f"{DAQ_DEVICE}/ao1",
-    "aom": f"{DAQ_DEVICE}/ao2",
-    "z_piezo": f"{DAQ_DEVICE}/ao3",
+CHANNELS = {
+    "x_galvo": {"DAQ": f"{DAQ_DEVICE}/ao0"},
+    "y_galvo": {"DAQ": f"{DAQ_DEVICE}/ao1"},
+    "aom": {"DAQ": f"{DAQ_DEVICE}/ao2"},
+    "z_piezo": {"DAQ": f"{DAQ_DEVICE}/ao3"},
 }
 ```
 

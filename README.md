@@ -191,6 +191,15 @@ To run:
 python tests/aom_set_power_test.py
 ```
 
+### `tests/set_voltage_all_channels.py`
+
+This test script allows manually sending a fixed analog voltage to all output channels on the connected DAQ. It's currently configured to use the voltage amplitudes and channels as defined in `config.py`.
+
+To run:
+```bash
+python tests/set_voltage_all_channels.py
+```
+
 ## Contributing
 
 We welcome contributions to Irradiant-2photon, including software, hardware, and system design improvements.

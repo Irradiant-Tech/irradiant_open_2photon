@@ -13,11 +13,11 @@ from config import (
     X_GALVO_CLIP_EXTRA_FRACTION,
     X_GALVO_CLIP_MAX_V,
 )
-from hardware.daq import execute_analog_output_daq
 from hardware.stage.dover_controller import DoverController
 from hardware.stage.mock_controller import MockController
 from hardware.stage.pdxc2_controller import PDXC2Controller
 from hardware.stage.xeryon.xeryon_controller import XeryonController
+from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_preprocessing.galvo_control import (
     generate_x_galvo_output,
     generate_y_galvo_output,
@@ -33,7 +33,7 @@ from utils.stop_flag import StopFlag
 
 def run_print_job(
     z_stage: PDXC2Controller | XeryonController | DoverController | MockController,
-    daq_connected: bool,
+    voltage_device: AnalogDevice | None,
     stop_flag: StopFlag,
     matrix_3D: np.ndarray = np.ones(
         (
@@ -136,8 +136,7 @@ def run_print_job(
         f"Total number of z frames: {number_of_z_frames}, nonzero z frames: {len(LineSignals)}"
     )
 
-    # Warning if no device connected for analog output
-    if not daq_connected:
+    if not voltage_device:
         print(
             "No device connected to execute analog output. Movement will still be tested."
         )
@@ -175,8 +174,8 @@ def run_print_job(
             samplesBetweenLines + scan_size,
         )
 
-        if daq_connected:
-            if not execute_analog_output_daq(
+        if voltage_device:
+            if not voltage_device.execute_analog_output(
                 sample_rate_hz,
                 x_galvo_filtered,
                 y_galvo_filtered,

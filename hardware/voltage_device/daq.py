@@ -1,22 +1,45 @@
 import time
+from typing import List
 
 import nidaqmx
 import nidaqmx.system
 import numpy as np
 from nidaqmx.constants import AcquisitionType
+from nidaqmx.system.device import Device
 
-from config import DAQ_CHANNEL_ORDER, DAQ_CHANNELS, DAQ_DEVICE, TIMING
+from config import CHANNEL_ORDER, CHANNELS, DAQ_DEVICE, TIMING
+from utils.channel_validation import normalize_and_validate_channels
 from utils.dtypes import ProcessingDataTypes
 from utils.scale_signals import scale_signals
 from utils.stop_flag import StopFlag
 
 
-def is_daq_connected():
+def is_daq_connected() -> bool:
     try:
         devices = [device.name for device in nidaqmx.system.System.local().devices]
         return DAQ_DEVICE in devices
-    except Exception:
+    except Exception as e:
+        print(f"DAQ connection failed: {e}")
         return False
+
+
+def hardware_constraints_daq() -> tuple[float, float]:
+    """
+    Returns DAQ hardware limits: (max_sample_rate_hz, max_samples_per_channel)
+        - max_sample_rate_hz: maximum sample clock rate supported by the DAQ
+        - max_samples_per_channel: maximum number of sample values that can fit in DAQ onboard memory per channel
+    """
+    try:
+        # Convert total rate shared across all AO channels to sample rate per channel
+        device = nidaqmx.system.System.local().devices[DAQ_DEVICE]
+        if not isinstance(device, Device):
+            raise TypeError(f"Expected Device, got {type(device).__name__}")
+        max_sample_rate_hz = device.ao_max_rate / len(CHANNELS)
+
+        # DAQ AO supports continuous streaming, so there is no fixed maxmimum samples per buffer.
+        return max_sample_rate_hz, np.inf
+    except Exception as e:
+        raise Exception(f"Failed to get DAQ hardware constraints: {e}")
 
 
 def execute_analog_output_daq(
@@ -56,7 +79,7 @@ def execute_analog_output_daq(
     )
 
     output_array = np.vstack(scaled_channels)
-    ao_channels = [DAQ_CHANNELS[ch] for ch in DAQ_CHANNEL_ORDER]
+    ao_channels = [CHANNELS[ch]["DAQ"] for ch in CHANNEL_ORDER]
     try:
         with nidaqmx.Task() as task:
             for channel in ao_channels:
@@ -100,8 +123,8 @@ def execute_analog_output_daq(
 
 
 def output_constant_voltage_daq(
-    channel: str,
-    voltage: float,
+    channel: str | List[str],
+    voltage: float | List[float],
     stop_flag: StopFlag,
 ) -> None:
     """
@@ -109,19 +132,22 @@ def output_constant_voltage_daq(
     Resets channel to 0V when output is stopped.
 
     Args:
-        - voltage: The voltage to output.
-        - channel: The DAQ channel (x_galvo, y_galvo, aom, or z_piezo).
+        - channel: DAQ channel (x_galvo, y_galvo, aom, or z_piezo) or list of channel names.
+        - voltage: Voltage or list of voltages corresponding to channels
         - stop_flag: stop_flag.stop = True to stop output.
     """
-    if channel not in DAQ_CHANNELS:
-        raise ValueError(f"Invalid channel: {channel}")
+    channel_names, voltages = normalize_and_validate_channels(channel, voltage)
 
     try:
         with nidaqmx.Task() as task:
-            # Start output and then release channel
-            task.ao_channels.add_ao_voltage_chan(DAQ_CHANNELS[channel])
-            task.write(voltage)
+            # Start output
+            for ch in channel_names:
+                task.ao_channels.add_ao_voltage_chan(CHANNELS[ch]["DAQ"])
+            task.write(voltages)
             task.start()
+
+            for ch, v in zip(channel_names, voltages):
+                print(f"DAQ outputting {v} V continuously on {ch}")
 
             check_interval = TIMING["check_interval"]
             while not stop_flag.stop:
@@ -132,7 +158,11 @@ def output_constant_voltage_daq(
         try:
             # Reset channel to 0V
             with nidaqmx.Task() as task:
-                task.ao_channels.add_ao_voltage_chan(DAQ_CHANNELS[channel])
-                task.write(0.0)
+                for ch in channel_names:
+                    task.ao_channels.add_ao_voltage_chan(CHANNELS[ch]["DAQ"])
+                task.write([0.0] * len(channel_names))
+            print(
+                f"DAQ stopped output on the following channels: {', '.join(channel_names)}."
+            )
         except Exception as cleanup_error:
-            print(f"Failed to reset DAQ channel {channel} to 0V: {cleanup_error}")
+            print(f"Failed to reset DAQ channels to 0V: {cleanup_error}")

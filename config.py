@@ -50,18 +50,22 @@ DEFAULT_PRINT_PARAMS = {
 }
 
 # ============================================================================
-# DAQ Device and Analog Output Channels
+# Hardware Devices
 # ============================================================================
 
 DAQ_DEVICE = "Dev1"
 
-DAQ_CHANNEL_ORDER = ["x_galvo", "y_galvo", "aom", "z_piezo"]
+# ============================================================================
+# Analog Output Channels
+# ============================================================================
 
-DAQ_CHANNELS = {
-    "x_galvo": f"{DAQ_DEVICE}/ao0",
-    "y_galvo": f"{DAQ_DEVICE}/ao1",
-    "aom": f"{DAQ_DEVICE}/ao2",
-    "z_piezo": f"{DAQ_DEVICE}/ao3",
+CHANNEL_ORDER = ["x_galvo", "y_galvo", "aom", "z_piezo"]
+
+CHANNELS = {
+    "x_galvo": {"DAQ": f"{DAQ_DEVICE}/ao0"},
+    "y_galvo": {"DAQ": f"{DAQ_DEVICE}/ao1"},
+    "aom": {"DAQ": f"{DAQ_DEVICE}/ao2"},
+    "z_piezo": {"DAQ": f"{DAQ_DEVICE}/ao3"},
 }
 
 VOLTAGE_AMPLITUDES = {

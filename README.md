@@ -104,11 +104,12 @@ A dense, uniform matrix using a single input value will be printed.
     - Values greater than `1.0` are clamped to `1.0`, and an empty matrix (all zeros) results in no print.
     - A value of `1.0` corresponds to **100% of the maximum laser power** as defined by the configured AOM voltage amplitude. See [setup.md](docs/setup.md) for more details.
 
-#### 1.2 Use NPY
-- Load a **3D NumPy (`.npy`) file** representing a voxelized print volume.
+#### 1.2 Use NumPy File
+- Load a **3D or 2D NumPy file (NPY or NPZ)** representing a voxelized print volume.
+  - For NPZ files, the matrix must be stored under the key defined by `NPZ_MATRIX_KEY` in config.py (defaulted to `"data"`).
 - The array shape must be: `(matrix_y, matrix_x, matrix_z)`, corresponding to **Y (slow axis), X (fast axis), and Z (layers)**
-- When an NPY file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
-- If the input NPY file has less than three dimensions, it will automatically be promoted to a 3D array with size 1 along any missing axes.
+- When a NumPy file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
+- If the input NumPy file has less than three dimensions, it will automatically be promoted to a 3D array with size 1 along any missing axes.
 - Example input files can be found in the [docs/examples](docs/examples/README.md) directory.
 
 ![Print File](docs/diagrams/gui/print_file.png)
@@ -129,7 +130,7 @@ The following parameters are applied to the above print file:
 #### 3.1 Start Print
 - Locks stage motion
 - Turns off the laser if it was previously on
-- Loads the selected matrix (ones or NPY)
+- Loads the selected matrix (dense or NumPy)
 - Starts the printing thread
 
 #### 3.2 Stop Print

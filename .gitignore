@@ -2,4 +2,5 @@
 /print_files
 *.pyc
 *.npy
+*.npz
 /gui/gui_state.json

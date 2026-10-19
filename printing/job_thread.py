@@ -1,7 +1,6 @@
 import time
 from datetime import timedelta
 
-import numpy as np
 from PyQt5.QtCore import QMutex, QThread, pyqtSignal
 
 from hardware.stage.dover_controller import DoverController
@@ -9,24 +8,24 @@ from hardware.stage.mock_controller import MockController
 from hardware.stage.pdxc2_controller import PDXC2Controller
 from hardware.stage.xeryon.xeryon_controller import XeryonController
 from hardware.voltage_device.voltage_devices import AnalogDevice
+from print_data.print_item import PrintItem
 from printing.job_executor import run_print_job
 from utils.stop_flag import StopFlag
 
 
 class PointscanThread(QThread):
     finished = pyqtSignal()
-    error = pyqtSignal(str)
 
     def __init__(
         self,
         z_stage: PDXC2Controller | XeryonController | DoverController | MockController,
         voltage_device: AnalogDevice | None,
         movement_lock: QMutex,
+        print_item: PrintItem,
     ) -> None:
         super().__init__()
         self.running = True
-        self.matrix: np.ndarray = np.array([])
-        self.params = {}
+        self.print_item = print_item
         self.z_stage = z_stage
         self.voltage_device = voltage_device
         self.stop_flag = StopFlag()
@@ -48,16 +47,14 @@ class PointscanThread(QThread):
                 z_stage=self.z_stage,
                 voltage_device=self.voltage_device,
                 stop_flag=self.stop_flag,
-                matrix_3D=self.matrix,
-                z_step_microns=self.params["z_step_microns"],
-                timePerPixel=self.params["timePerPixel"],
-                FOV_X_um=self.params["FOV_X_um"],
-                FOV_Y_um=self.params["FOV_Y_um"],
+                print_item=self.print_item,
             )
         except Exception as e:
             error_occurred = True
             print(f"\nPrint thread errored: {str(e)}")
         finally:
+            # Clean up matrix memory after job
+            self.print_item.clear_matrix()
             self.movement_lock.unlock()
             self.finished.emit()
             if self.stop_flag.stop:

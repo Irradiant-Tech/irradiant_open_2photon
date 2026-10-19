@@ -32,9 +32,13 @@ GUI_CONFIG = {
 }
 
 # ============================================================================
-# Default Application Parameters
+# Print File Parameters
 # ============================================================================
 
+# NumPy file support (NPY or NPZ)
+NPZ_MATRIX_KEY = "data"
+
+# Dense matrix support
 DEFAULT_PRINT_FILE_PARAMS = {
     "matrix_x": 1300,  # Matrix X dimension (pixels)
     "matrix_y": 1300,  # Matrix Y dimension (pixels)
@@ -42,12 +46,18 @@ DEFAULT_PRINT_FILE_PARAMS = {
     "dense_matrix_value": 1.0,  # Dense matrix value (0 to 1)
 }
 
+# ============================================================================
+# Print Parameters
+# ============================================================================
+
 DEFAULT_PRINT_PARAMS = {
     "z_step": 1.5,  # Z step size (µm)
     "time_per_pixel": 5.0,  # Time per pixel (µs)
     "fov_x": 650.0,  # Field of view X dimension (µm)
     "fov_y": 650.0,  # Field of view Y dimension (µm)
 }
+
+REQUIRED_PRINT_PARAMS = ["z_step", "time_per_pixel", "fov_x", "fov_y"]
 
 # ============================================================================
 # Hardware Devices

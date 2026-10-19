@@ -5,8 +5,6 @@ import numpy as np
 import torch
 
 from config import (
-    DEFAULT_PRINT_FILE_PARAMS,
-    DEFAULT_PRINT_PARAMS,
     GALVO_RECOVERY_TIME,
     GALVO_SCALING,
     VOLTAGE_AMPLITUDES,
@@ -18,6 +16,7 @@ from hardware.stage.mock_controller import MockController
 from hardware.stage.pdxc2_controller import PDXC2Controller
 from hardware.stage.xeryon.xeryon_controller import XeryonController
 from hardware.voltage_device.voltage_devices import AnalogDevice
+from print_data.print_item import PrintItem
 from print_preprocessing.galvo_control import (
     generate_x_galvo_output,
     generate_y_galvo_output,
@@ -35,27 +34,28 @@ def run_print_job(
     z_stage: PDXC2Controller | XeryonController | DoverController | MockController,
     voltage_device: AnalogDevice | None,
     stop_flag: StopFlag,
-    matrix_3D: np.ndarray = np.ones(
-        (
-            DEFAULT_PRINT_FILE_PARAMS["matrix_y"],
-            DEFAULT_PRINT_FILE_PARAMS["matrix_x"],
-            DEFAULT_PRINT_FILE_PARAMS["matrix_z"],
-        )
-    ),
-    z_step_microns: float = DEFAULT_PRINT_PARAMS["z_step"],
-    timePerPixel: float = DEFAULT_PRINT_PARAMS["time_per_pixel"] * 1e-6,
-    FOV_X_um: float = DEFAULT_PRINT_PARAMS["fov_x"],
-    FOV_Y_um: float = DEFAULT_PRINT_PARAMS["fov_y"],
+    print_item: PrintItem,
 ) -> None:
+    matrix_3D = print_item.load_matrix()
+
+    # Print parameters
+    print_item.validate_print_params()
+    z_step_microns = print_item.print_params["z_step"]
+    time_per_pixel_us = print_item.print_params["time_per_pixel"]
+    FOV_X_um = print_item.print_params["fov_x"]
+    FOV_Y_um = print_item.print_params["fov_y"]
+
+    # Scan parameters
     scan_size = matrix_3D.shape[1]
     print_height_px = matrix_3D.shape[0]
     z_step_nm = z_step_microns * 1000  # nm
+    timePerPixel = time_per_pixel_us * 1e-6  # seconds
     timeBetweenLines = GALVO_RECOVERY_TIME  # Galvo recovery time (constant)
     samplesBetweenLines = int(timeBetweenLines / timePerPixel)
     sample_rate_hz = float(1 / timePerPixel)
 
     print(
-        f"\nStarting print job. FOV_X_um: {FOV_X_um}, FOV_Y_um: {FOV_Y_um}, z_step_nm: {z_step_nm}, time_per_pixel_us: {timePerPixel}"
+        f"\nStarting print job. FOV_X_um: {FOV_X_um}, FOV_Y_um: {FOV_Y_um}, z_step_nm: {z_step_nm}, time_per_pixel_us: {time_per_pixel_us}"
     )
 
     # Generate AOM signals + original z-indices of non-blank frames

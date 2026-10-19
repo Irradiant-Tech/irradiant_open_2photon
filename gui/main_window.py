@@ -5,7 +5,6 @@ import matplotlib
 
 matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LinearSegmentedColormap, Normalize
@@ -44,8 +43,8 @@ from hardware.stage.mock_controller import MockController
 from hardware.stage.pdxc2_controller import PDXC2Controller
 from hardware.stage.xeryon.xeryon_controller import XeryonController
 from hardware.voltage_device.voltage_devices import get_voltage_device
+from print_data.print_item import PrintItem
 from printing.job_thread import LaserThread, PointscanThread
-from utils.dtypes import ProcessingDataTypes
 
 
 class IntegratedGUI(QMainWindow):
@@ -174,7 +173,7 @@ class IntegratedGUI(QMainWindow):
 
         matrix_type_group = QButtonGroup(self)
         self.dense_radio = QRadioButton("Use Dense Matrix")
-        self.npy_radio = QRadioButton("Use NPY")
+        self.npy_radio = QRadioButton("Use NumPy (NPY or NPZ)")
         matrix_type_group.addButton(self.dense_radio)
         matrix_type_group.addButton(self.npy_radio)
         self.dense_radio.setChecked(True)
@@ -209,12 +208,12 @@ class IntegratedGUI(QMainWindow):
         self.npy_path_input = QLineEdit()
         self.npy_path_input.setEnabled(False)
         self.npy_path_input.textChanged.connect(self.saveState)
-        self.load_npy_button = QPushButton("Load NPY")
+        self.load_npy_button = QPushButton("Load NumPy")
         self.load_npy_button.clicked.connect(self.loadNPYFile)
         self.load_npy_button.setEnabled(False)
         npy_layout.addWidget(self.npy_path_input)
         npy_layout.addWidget(self.load_npy_button)
-        file_layout.addRow("NPY File:", npy_layout)
+        file_layout.addRow("NumPy file:", npy_layout)
 
         # Initialize enabled state based on radio button default (after all widgets are created)
         self.onMatrixTypeChanged()
@@ -491,6 +490,7 @@ class IntegratedGUI(QMainWindow):
         self.dense_matrix_value_input.setEnabled(use_dense)
 
     def loadNPYFile(self) -> None:
+        """Load NumPy file (NPY or NPZ)."""
         initial_dir = (
             os.path.dirname(self.npy_path_input.text())
             if self.npy_path_input.text()
@@ -498,9 +498,9 @@ class IntegratedGUI(QMainWindow):
         )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select NPY File",
+            "Select NumPy file",
             initial_dir,
-            "NPY Files (*.npy)",
+            "NumPy Files (*.npy *.npz)",
             options=QFileDialog.DontUseNativeDialog,
         )
         if file_path:
@@ -520,40 +520,42 @@ class IntegratedGUI(QMainWindow):
 
                     try:
                         z_step = float(self.z_step_input.text())
-                        time_per_pixel = float(self.time_per_pixel_input.text()) * 1e-6
+                        time_per_pixel = float(self.time_per_pixel_input.text())
                         fov_x = float(self.fov_x_input.text())
                         fov_y = float(self.fov_y_input.text())
                         matrix_x = int(self.matrix_x_input.text())
                         matrix_y = int(self.matrix_y_input.text())
                         matrix_z = int(self.matrix_z_input.text())
 
-                        if self.dense_radio.isChecked():
-                            dense_value = float(self.dense_matrix_value_input.text())
-                            dense_value = max(
-                                0.0, min(1.0, dense_value)
-                            )  # Clamp to 0-1
-                            matrix_3D = (
-                                np.ones((matrix_y, matrix_x, matrix_z)) * dense_value
-                            )
-                        else:
-                            matrix_3D = np.atleast_3d(
-                                np.load(self.npy_path_input.text())
-                            )
+                        use_dense = self.dense_radio.isChecked()
+                        dense_value = (
+                            float(self.dense_matrix_value_input.text())
+                            if use_dense
+                            else 0.0
+                        )
+                        npy_path = self.npy_path_input.text() if not use_dense else ""
+
+                        print_item = PrintItem.from_gui_inputs(
+                            use_dense=use_dense,
+                            npy_path=npy_path,
+                            matrix_x=matrix_x,
+                            matrix_y=matrix_y,
+                            matrix_z=matrix_z,
+                            dense_value=dense_value,
+                            z_step=z_step,
+                            time_per_pixel=time_per_pixel,
+                            fov_x=fov_x,
+                            fov_y=fov_y,
+                        )
 
                         self.initial_z_pos = self.z_controller.position
 
                         self.pointscan_thread = PointscanThread(
-                            self.z_controller, self.voltage_device, self.movement_lock
+                            self.z_controller,
+                            self.voltage_device,
+                            self.movement_lock,
+                            print_item,
                         )
-                        self.pointscan_thread.matrix = matrix_3D.astype(
-                            ProcessingDataTypes.numpy_dtype
-                        )
-                        self.pointscan_thread.params = {
-                            "z_step_microns": z_step,
-                            "timePerPixel": time_per_pixel,
-                            "FOV_X_um": fov_x,
-                            "FOV_Y_um": fov_y,
-                        }
 
                         self.pointscan_thread.finished.connect(self.onPointscanFinished)
                         self.pointscan_thread.start()

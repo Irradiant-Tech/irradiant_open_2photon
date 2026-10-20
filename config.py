@@ -55,6 +55,10 @@ DEFAULT_PRINT_PARAMS = {
     "time_per_pixel": 5.0,  # Time per pixel (µs)
     "fov_x": 650.0,  # Field of view X dimension (µm)
     "fov_y": 650.0,  # Field of view Y dimension (µm)
+    "use_custom_xraster_rate": False,  # Send X raster at the custom sample rate
+    "xraster_custom_rate_hz": 6
+    * 10
+    ** 6,  # Custom sample rate for X raster (Hz), if use_xraster_custom_rate_hz is True
 }
 
 REQUIRED_PRINT_PARAMS = ["z_step", "time_per_pixel", "fov_x", "fov_y"]

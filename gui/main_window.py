@@ -245,6 +245,36 @@ class IntegratedGUI(QMainWindow):
         self.fov_y_input.textChanged.connect(self.saveState)
         params_layout.addRow("FOV Y (µm):", self.fov_y_input)
 
+        self.xraster_widget = QWidget()
+        xraster_layout = QHBoxLayout()
+
+        self.xraster_default_rate = QRadioButton("1 / Time per Pixel")
+        self.xraster_custom_rate = QRadioButton("Custom")
+        use_custom = DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"]
+        self.xraster_default_rate.setChecked(not use_custom)
+        self.xraster_custom_rate.setChecked(use_custom)
+        self.xraster_default_rate.toggled.connect(self.saveState)
+        self.xraster_custom_rate.toggled.connect(self.saveState)
+
+        self.xraster_custom_input = QLineEdit(
+            str(DEFAULT_PRINT_PARAMS["xraster_custom_rate_hz"] * 1e-6)
+        )
+        self.xraster_custom_input.setEnabled(use_custom)
+        self.xraster_custom_input.textChanged.connect(self.saveState)
+        self.xraster_custom_rate.toggled.connect(
+            lambda checked: self.xraster_custom_input.setEnabled(checked)
+        )
+
+        xraster_layout.addWidget(self.xraster_default_rate)
+        xraster_layout.addWidget(self.xraster_custom_rate)
+        xraster_layout.addWidget(self.xraster_custom_input)
+        xraster_layout.addWidget(QLabel("MHz"))
+        xraster_layout.setContentsMargins(0, 0, 0, 0)
+        xraster_layout.addStretch()
+
+        self.xraster_widget.setLayout(xraster_layout)
+        params_layout.addRow("X Raster Sample Rate:", self.xraster_widget)
+
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
@@ -526,6 +556,10 @@ class IntegratedGUI(QMainWindow):
                         matrix_x = int(self.matrix_x_input.text())
                         matrix_y = int(self.matrix_y_input.text())
                         matrix_z = int(self.matrix_z_input.text())
+                        use_custom_xraster_rate = self.xraster_custom_rate.isChecked()
+                        xraster_custom_rate_hz = (
+                            float(self.xraster_custom_input.text()) * 1e6
+                        )
 
                         use_dense = self.dense_radio.isChecked()
                         dense_value = (
@@ -546,6 +580,8 @@ class IntegratedGUI(QMainWindow):
                             time_per_pixel=time_per_pixel,
                             fov_x=fov_x,
                             fov_y=fov_y,
+                            use_custom_xraster_rate=use_custom_xraster_rate,
+                            xraster_custom_rate_hz=xraster_custom_rate_hz,
                         )
 
                         self.initial_z_pos = self.z_controller.position
@@ -632,6 +668,8 @@ class IntegratedGUI(QMainWindow):
             "time_per_pixel": self.time_per_pixel_input.text(),
             "fov_x": self.fov_x_input.text(),
             "fov_y": self.fov_y_input.text(),
+            "use_custom_xraster_rate": self.xraster_custom_rate.isChecked(),
+            "xraster_custom_rate_hz": self.xraster_custom_input.text(),
             "matrix_x": self.matrix_x_input.text(),
             "matrix_y": self.matrix_y_input.text(),
             "matrix_z": self.matrix_z_input.text(),
@@ -669,6 +707,18 @@ class IntegratedGUI(QMainWindow):
             )
             self.fov_y_input.setText(
                 state.get("fov_y", str(DEFAULT_PRINT_PARAMS["fov_y"]))
+            )
+            use_custom = state.get(
+                "use_custom_xraster_rate",
+                DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"],
+            )
+            self.xraster_default_rate.setChecked(not use_custom)
+            self.xraster_custom_rate.setChecked(use_custom)
+            self.xraster_custom_input.setText(
+                state.get(
+                    "xraster_custom_rate_hz",
+                    str(DEFAULT_PRINT_PARAMS["xraster_custom_rate_hz"] * 1e-6),
+                )
             )
             self.matrix_x_input.setText(
                 state.get("matrix_x", str(DEFAULT_PRINT_FILE_PARAMS["matrix_x"]))

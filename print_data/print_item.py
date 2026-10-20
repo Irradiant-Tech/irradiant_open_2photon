@@ -39,7 +39,7 @@ class PrintItem:
     dense_params: Optional[Dict[str, Any]] = None  # Required if file_type == "dense"
     print_params: Dict[str, Any] = field(
         default_factory=dict
-    )  # z_step (µm), time_per_pixel (µs), fov_x (µm), fov_y (µm)
+    )  # z_step (µm), time_per_pixel (µs), fov_x (µm), fov_y (µm), use_custom_xraster_rate (bool), xraster_custom_rate_hz (Hz)
     _matrix: Optional[np.ndarray] = field(
         default=None, init=False, repr=False
     )  # Lazy-loaded 3D matrix (y, x, z), values typically 0-1
@@ -103,6 +103,8 @@ class PrintItem:
         time_per_pixel: float,
         fov_x: float,
         fov_y: float,
+        use_custom_xraster_rate: bool,
+        xraster_custom_rate_hz: float,
     ) -> "PrintItem":
         """Create PrintItem from GUI inputs."""
         print_params = {
@@ -110,6 +112,8 @@ class PrintItem:
             "time_per_pixel": time_per_pixel,
             "fov_x": fov_x,
             "fov_y": fov_y,
+            "use_custom_xraster_rate": use_custom_xraster_rate,
+            "xraster_custom_rate_hz": xraster_custom_rate_hz,
         }
 
         if use_dense:

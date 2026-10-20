@@ -5,6 +5,7 @@ import numpy as np
 import torch
 
 from config import (
+    DEFAULT_PRINT_PARAMS,
     GALVO_RECOVERY_TIME,
     GALVO_SCALING,
     VOLTAGE_AMPLITUDES,
@@ -22,6 +23,7 @@ from print_preprocessing.galvo_control import (
     generate_y_galvo_output,
 )
 from print_preprocessing.signals import (
+    compute_custom_rate_raster_params,
     filter_signals_by_reference,
     generate_signals_all_frames,
 )
@@ -44,6 +46,12 @@ def run_print_job(
     time_per_pixel_us = print_item.print_params["time_per_pixel"]
     FOV_X_um = print_item.print_params["fov_x"]
     FOV_Y_um = print_item.print_params["fov_y"]
+    use_custom_xraster_rate = print_item.print_params.get(  # Optional
+        "use_custom_xraster_rate", DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"]
+    )
+    xraster_custom_rate_hz = print_item.print_params.get(  # Optional
+        "xraster_custom_rate_hz", DEFAULT_PRINT_PARAMS["xraster_custom_rate_hz"]
+    )
 
     # Scan parameters
     scan_size = matrix_3D.shape[1]
@@ -84,6 +92,21 @@ def run_print_job(
         z_normalized = target_zs / np.max(np.abs(target_zs))
     else:
         z_normalized = target_zs.copy()
+
+    # Default to no oversampling (1 sample per value) if not sending at custom sample rate
+    samples_per_value = 1
+    if use_custom_xraster_rate and xraster_custom_rate_hz and voltage_device:
+        sample_rate_hz, samples_per_value = compute_custom_rate_raster_params(
+            voltage_device,
+            xraster_custom_rate_hz,
+            timePerPixel,
+            print_height_px,
+            scan_size,
+            samplesBetweenLines,
+        )
+        # Update to reflect oversampling
+        scan_size *= samples_per_value
+        samplesBetweenLines *= samples_per_value
 
     # Generate signals for x and y galvos scaled from -1 to 1
     x_galvo_output = generate_x_galvo_output(
@@ -160,8 +183,13 @@ def run_print_job(
         print(f"   Z position after moving and settling: {final_pos} nm")
 
         aom_frame = LineSignals[filtered_idx]
-        # z-piezo is a constant DC value for the whole frame
-        z_piezo_frame = np.full_like(aom_frame, z_normalized[filtered_idx])
+
+        # Expand to num_points * samples_per_value samples per frame.
+        # AOM varies per pixel; z-piezo is a constant DC value for the whole frame.
+        aom_frame_expanded = np.repeat(aom_frame, samples_per_value)
+        z_piezo_frame_expanded = np.full_like(
+            aom_frame_expanded, z_normalized[filtered_idx]
+        )
 
         # Filter signals based on AOM being on/off
         aom_filtered_frame, (
@@ -169,10 +197,12 @@ def run_print_job(
             y_galvo_filtered,
             z_piezo_filtered_frame,
         ) = filter_signals_by_reference(
-            aom_frame,
-            [x_galvo_scaled_normalized, y_galvo_scaled, z_piezo_frame],
+            aom_frame_expanded,
+            [x_galvo_scaled_normalized, y_galvo_scaled, z_piezo_frame_expanded],
             samplesBetweenLines + scan_size,
         )
+        # Filtered signals are copies, delete aom_frame_expanded and z_piezo_frame_expanded
+        del aom_frame_expanded, z_piezo_frame_expanded
 
         if voltage_device:
             if not voltage_device.execute_analog_output(

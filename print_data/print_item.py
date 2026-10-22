@@ -25,7 +25,7 @@ def generate_dense_matrix(
 ) -> np.ndarray:
     """Generate dense matrix with given dimensions and value."""
     dense_value = max(0.0, min(1.0, value))  # Clamp to 0-1
-    return (np.ones((matrix_y, matrix_x, matrix_z)) * dense_value).astype(
+    return (np.ones((matrix_x, matrix_y, matrix_z)) * dense_value).astype(
         ProcessingDataTypes.numpy_dtype
     )
 

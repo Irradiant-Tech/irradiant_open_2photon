@@ -72,9 +72,10 @@ class IntegratedGUI(QMainWindow):
             )
         )
 
+        # X and Y axes configuration are swapped for Xeryon to match camera feed orientation.
         x_serial_pdxc2 = PDXC2_CONFIG["device_serials"]["x_axis"]
         self.x_controller = (
-            XeryonController(serial="", home=False, axis="X")
+            XeryonController(serial="", home=False, axis="Y")
             if xeryon_connected
             else (
                 PDXC2Controller(serial=x_serial_pdxc2, home=False, axis="X")
@@ -85,7 +86,7 @@ class IntegratedGUI(QMainWindow):
 
         y_serial_pdxc2 = PDXC2_CONFIG["device_serials"]["y_axis"]
         self.y_controller = (
-            XeryonController(serial="", home=False, axis="Y")
+            XeryonController(serial="", home=False, axis="X")
             if xeryon_connected
             else (
                 PDXC2Controller(serial=y_serial_pdxc2, home=False, axis="Y")
@@ -138,8 +139,9 @@ class IntegratedGUI(QMainWindow):
 
         self.controllers = [self.x_controller, self.y_controller, self.z_controller]
         reference_pos = XERYON_CONFIG["reference_position"]
-        self.home_x = reference_pos["X"]
-        self.home_y = reference_pos["Y"]
+        # X and Y axes configuration are swapped for Xeryon to match camera feed orientation.
+        self.home_x = reference_pos["Y"]
+        self.home_y = reference_pos["X"]
         self.home_z = reference_pos["Z"]
 
         self.initUI()
@@ -395,8 +397,9 @@ class IntegratedGUI(QMainWindow):
         self.minimap_canvas.setFixedSize(*GUI_CONFIG["minimap_size"])
 
         # Set limits from config
-        x_limits = STAGE_POSITION_LIMITS["axis_limits"]["X"]
-        y_limits = STAGE_POSITION_LIMITS["axis_limits"]["Y"]
+        # X and Y axes configuration are swapped for Xeryon to match camera feed orientation.
+        x_limits = STAGE_POSITION_LIMITS["axis_limits"]["Y"]
+        y_limits = STAGE_POSITION_LIMITS["axis_limits"]["X"]
         # Use ZAXIS limits for Dover controller, Z limits for others
         z_axis_key = "ZAXIS" if isinstance(self.z_controller, DoverController) else "Z"
         z_limits = STAGE_POSITION_LIMITS["axis_limits"][z_axis_key]

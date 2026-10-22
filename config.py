@@ -93,7 +93,10 @@ VOLTAGE_AMPLITUDES = {
 # Signal Processing & Calibration
 # ============================================================================
 
-GALVO_SCALING = {"x": 613, "y": 748}  # Galvo scaling (µm/V), full range -1V to 1V
+GALVO_SCALING = {
+    "x": 322.857,
+    "y": 435.063,
+}  # Galvo scaling (µm/V) for full galvo voltage amp range
 GALVO_RECOVERY_TIME = 547 * 2e-6  # Galvo recovery time (s)
 
 # X galvo symmetric clip (blanking overshoot): allow X_GALVO_CLIP_EXTRA_FRACTION beyond effective

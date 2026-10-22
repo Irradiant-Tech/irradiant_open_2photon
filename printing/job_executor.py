@@ -54,8 +54,8 @@ def run_print_job(
     )
 
     # Scan parameters
-    scan_size = matrix_3D.shape[1]
-    print_height_px = matrix_3D.shape[0]
+    scan_size = matrix_3D.shape[0]
+    print_height_px = matrix_3D.shape[1]
     z_step_nm = z_step_microns * 1000  # nm
     timePerPixel = time_per_pixel_us * 1e-6  # seconds
     timeBetweenLines = GALVO_RECOVERY_TIME  # Galvo recovery time (constant)

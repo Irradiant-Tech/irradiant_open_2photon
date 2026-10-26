@@ -53,8 +53,8 @@ DEFAULT_PRINT_FILE_PARAMS = {
 DEFAULT_PRINT_PARAMS = {
     "z_step": 1.5,  # Z step size (µm)
     "time_per_pixel": 5.0,  # Time per pixel (µs)
-    "fov_x": 650.0,  # Field of view X dimension (µm)
-    "fov_y": 650.0,  # Field of view Y dimension (µm)
+    "fov_x": 300.0,  # Field of view X dimension (µm)
+    "fov_y": 300.0,  # Field of view Y dimension (µm)
     "use_custom_xraster_rate": False,  # Send X raster at the custom sample rate
     "xraster_custom_rate_hz": 6
     * 10
@@ -93,17 +93,21 @@ VOLTAGE_AMPLITUDES = {
 # Signal Processing & Calibration
 # ============================================================================
 
-GALVO_SCALING = {
-    "x": 322.857,
-    "y": 435.063,
-}  # Galvo scaling (µm/V) for full galvo voltage amp range
+# Galvo scaling (µm/V)
+# Factor is computed as the measured FOV (numerator) divided by the full scan range
+# from -_GALVO_CALIBRATION_AMP_V to +_GALVO_CALIBRATION_AMP_V (denominator).
+_GALVO_CALIBRATION_AMP_V = 1.4
+GALVO_UM_PER_V = {
+    "x": 322.857 / (2 * _GALVO_CALIBRATION_AMP_V),  # Measured 322.857 µm over 2.8 V
+    "y": 435.063 / (2 * _GALVO_CALIBRATION_AMP_V),  # Measured 435.063 µm over 2.8 V
+}
 GALVO_RECOVERY_TIME = 547 * 2e-6  # Galvo recovery time (s)
 
 # X galvo symmetric clip (blanking overshoot): allow X_GALVO_CLIP_EXTRA_FRACTION beyond effective
 # amplitude; clip magnitude capped at X_GALVO_CLIP_MAX_V.
 # GALVO_RECOVERY_TIME isn't large enough for x-galvo to respond to 50% extension period, but is sufficient for printing.
 X_GALVO_CLIP_EXTRA_FRACTION = 0.5
-X_GALVO_CLIP_MAX_V = 3.0  # (V), max clip magnitude
+X_GALVO_CLIP_MAX_V = max(3.0, VOLTAGE_AMPLITUDES["x_galvo"])  # (V), max clip magnitude
 
 AOM_POWER_RANGE = (0.0, 1.0)  # Min and max allowed powers for AOM
 
@@ -211,6 +215,11 @@ XERYON_CONFIG = {
         "settling_tolerance": 50,  # tolerance (nm)
         "timeout": 15.0,  # maximum time to wait for settling (s)
     },
+    #
+    "elim_recovery": {
+        "timeout": 1.5,  # Maximum time to wait for error status to clear (s)
+        "poll_interval": 0.01,  # ELIM status polling interval during recovery (s)
+    },
 }
 
 _DOVER_ROOT = r"C:\Users\Irradiant\Dover\MotionSynergy"
@@ -236,20 +245,30 @@ DOVER_CONFIG = {
     },
 }
 
+# GUI axis -> hardware axis letter.
+# Xeryon swaps X/Y to match the camera feed orientation; other backends map 1:1.
+STAGE_AXIS_MAP = {
+    "xeryon": {"X": "Y", "Y": "X", "Z": "Z"},
+    "default": {"X": "X", "Y": "Y", "Z": "Z"},
+}
+
 STAGE_POSITION_LIMITS = {
-    # Per-axis position limits (min, max) (nm)
-    # Note: These limits are based on Xeryon stage hardware limits.
-    # PDXC2 may have different limits - this is suboptimal but kept shared
-    # for simplicity. New stage installations will need new per-controller limits.
+    # Soft limits (nm) in the GUI axis frame (X/Y/Z as the user sees them), to keep
+    # the objective inside the immersion holder ring. Hardware travel stays wider
+    # (see settings_Xeryon.txt). Swap Sample bypasses these.
     "axis_limits": {
-        "X": {"min": -45e6, "max": 45e6},  # -45mm to 45mm
-        "Y": {"min": -45e6, "max": 45e6},  # -45mm to 45mm
-        "Z": {"min": -5e6, "max": 5e6},  # -5mm to 5mm
-        "ZAXIS": {
-            "min": -2.5e6,
-            "max": 2.5e6,
-        },  # -2.5mm to 2.5mm (Dover DOF5 axis name)
+        "X": {"min": -4e6, "max": 9e6},  # -4mm to 9mm
+        "Y": {"min": -4e6, "max": 9e6},  # -4mm to 9mm
+        "Z": {"min": -5e5, "max": 2.5e6},  # -0.5mm to 2.5mm
     },
+}
+
+SWAP_SAMPLE_POSITION = {
+    # X and Y are in GUI frame (x -> x_controller, y -> y_controller), which is
+    # swapped relative to the Xeryon axis letters. x is outside STAGE_POSITION_LIMITS.
+    "x": 45e6,  # nm
+    "y": 0,  # nm
+    "z": 2.5e6,  # nm (Dover Z only)
 }
 
 # ============================================================================

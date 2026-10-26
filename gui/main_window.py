@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.cm import ScalarMappable
 from matplotlib.colors import LinearSegmentedColormap, Normalize
-from matplotlib.ticker import MultipleLocator
+from matplotlib.ticker import AutoMinorLocator, MaxNLocator
 from PyQt5.QtCore import QMutex, Qt, QTimer
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import (
@@ -20,6 +20,7 @@ from PyQt5.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QVBoxLayout,
@@ -29,19 +30,18 @@ from PyQt5.QtWidgets import (
 from config import (
     DEFAULT_PRINT_FILE_PARAMS,
     DEFAULT_PRINT_PARAMS,
+    GALVO_UM_PER_V,
     GUI_CONFIG,
-    PDXC2_CONFIG,
     STAGE_POSITION_LIMITS,
     STATE_FILE,
+    SWAP_SAMPLE_POSITION,
     THREADING_CONFIG,
     VOLTAGE_AMPLITUDES,
     XERYON_CONFIG,
 )
 from hardware.joystick import JoystickThread
 from hardware.stage.dover_controller import DoverController, shutdown_motion_synergy_api
-from hardware.stage.mock_controller import MockController
-from hardware.stage.pdxc2_controller import PDXC2Controller
-from hardware.stage.xeryon.xeryon_controller import XeryonController
+from hardware.stage.stage import create_stage_controllers
 from hardware.voltage_device.voltage_devices import get_voltage_device
 from print_data.print_item import PrintItem
 from printing.job_thread import LaserThread, PointscanThread
@@ -56,93 +56,23 @@ class IntegratedGUI(QMainWindow):
         self.laser_thread = None
         self.state_file = STATE_FILE
         self.initial_z_pos = 0
+        self.swap_return_position = None
         self.voltage_device, _ = get_voltage_device()
-        # Use real controllers if connected, otherwise MockController
-        # Priority: Xeryon > PDXC2 > Dover > Mock (only need to try Dover during homing)
-        xeryon_connected = XeryonController.is_connected("")
 
-        z_serial_pdxc2 = PDXC2_CONFIG["device_serials"]["z_axis"]
-        self.z_controller = (
-            XeryonController(serial="", home=False, axis="Z")
-            if xeryon_connected
-            else (
-                PDXC2Controller(serial=z_serial_pdxc2, home=False, axis="Z")
-                if PDXC2Controller.is_connected(z_serial_pdxc2)
-                else MockController(serial=z_serial_pdxc2, home=False, axis="Z")
-            )
-        )
-
-        # X and Y axes configuration are swapped for Xeryon to match camera feed orientation.
-        x_serial_pdxc2 = PDXC2_CONFIG["device_serials"]["x_axis"]
-        self.x_controller = (
-            XeryonController(serial="", home=False, axis="Y")
-            if xeryon_connected
-            else (
-                PDXC2Controller(serial=x_serial_pdxc2, home=False, axis="X")
-                if PDXC2Controller.is_connected(x_serial_pdxc2)
-                else MockController(serial=x_serial_pdxc2, home=False, axis="X")
-            )
-        )
-
-        y_serial_pdxc2 = PDXC2_CONFIG["device_serials"]["y_axis"]
-        self.y_controller = (
-            XeryonController(serial="", home=False, axis="X")
-            if xeryon_connected
-            else (
-                PDXC2Controller(serial=y_serial_pdxc2, home=False, axis="Y")
-                if PDXC2Controller.is_connected(y_serial_pdxc2)
-                else MockController(serial=y_serial_pdxc2, home=False, axis="Y")
-            )
-        )
-
-        # Find reference for all controllers explicitly (Z first, then X, Y for Xeryon compatibility)
-        # If reference finding fails, try Dover for Z axis, then fallback to MockController
-        for axis_name, controller_attr in [
-            ("Z", "z_controller"),
-            ("X", "x_controller"),
-            ("Y", "y_controller"),
-        ]:
-            controller = getattr(self, controller_attr)
-
-            try:
-                controller.home()
-            except (RuntimeError, Exception) as e:
-                # Special handling for Z axis: try Dover as fallback
-                if axis_name == "Z" and not isinstance(controller, DoverController):
-                    print(
-                        f"Z axis: Reference finding failed ({e}), trying Dover as fallback..."
-                    )
-                    if DoverController.is_connected(""):
-                        try:
-                            dover_z = DoverController(serial="", home=False, axis="Z")
-                            dover_z.home()
-                            setattr(self, controller_attr, dover_z)
-                            print("Z axis: Successfully fell back to DoverController")
-                            continue
-                        except Exception as dover_error:
-                            print(
-                                f"Z axis: Dover homing also failed ({dover_error}), using MockController"
-                            )
-                    else:
-                        print("Z axis: Dover not available, using MockController")
-
-                # Default fallback to MockController
-                print(
-                    f"{axis_name} axis: Reference finding failed ({e}), replacing with MockController"
-                )
-                serial = PDXC2_CONFIG["device_serials"][f"{axis_name.lower()}_axis"]
-                setattr(
-                    self,
-                    controller_attr,
-                    MockController(serial=serial, home=False, axis=axis_name),
-                )
+        # Build and home the stage controllers (Xeryon > PDXC2 > Dover > Mock).
+        # The GUI<->hardware axis swap is resolved centrally and returned as axis_map.
+        (
+            self.x_controller,
+            self.y_controller,
+            self.z_controller,
+            self.axis_map,
+        ) = create_stage_controllers()
 
         self.controllers = [self.x_controller, self.y_controller, self.z_controller]
         reference_pos = XERYON_CONFIG["reference_position"]
-        # X and Y axes configuration are swapped for Xeryon to match camera feed orientation.
-        self.home_x = reference_pos["Y"]
-        self.home_y = reference_pos["X"]
-        self.home_z = reference_pos["Z"]
+        self.home_x = reference_pos[self.axis_map["X"]]
+        self.home_y = reference_pos[self.axis_map["Y"]]
+        self.home_z = reference_pos[self.axis_map["Z"]]
 
         self.initUI()
         self.loadState()
@@ -246,6 +176,14 @@ class IntegratedGUI(QMainWindow):
         self.fov_y_input = QLineEdit(str(DEFAULT_PRINT_PARAMS["fov_y"]))
         self.fov_y_input.textChanged.connect(self.saveState)
         params_layout.addRow("FOV Y (µm):", self.fov_y_input)
+
+        max_fov_x = 2 * VOLTAGE_AMPLITUDES["x_galvo"] * GALVO_UM_PER_V["x"]
+        max_fov_y = 2 * VOLTAGE_AMPLITUDES["y_galvo"] * GALVO_UM_PER_V["y"]
+        max_fov_label = QLabel(
+            f"Max FOV for current settings: X = {max_fov_x:.2f} µm, Y = {max_fov_y:.2f} µm"
+        )
+        max_fov_label.setStyleSheet("color: gray;")
+        params_layout.addRow(max_fov_label)
 
         self.xraster_widget = QWidget()
         xraster_layout = QHBoxLayout()
@@ -384,6 +322,18 @@ class IntegratedGUI(QMainWindow):
         self.move_home_button = add_button_column(home_layout, "Go Home", self.moveHome)
         set_equal_stretch(home_layout)
         position_layout.addLayout(home_layout)
+
+        # Sample swap row
+        swap_layout = QHBoxLayout()
+        self.swap_sample_button = QPushButton("Swap Sample")
+        self.swap_sample_button.clicked.connect(self.swapSample)
+        self.swap_complete_button = QPushButton("Swap Complete")
+        self.swap_complete_button.clicked.connect(self.swapComplete)
+        self.swap_complete_button.setEnabled(False)
+        swap_layout.addWidget(self.swap_sample_button)
+        swap_layout.addWidget(self.swap_complete_button)
+        position_layout.addLayout(swap_layout)
+
         position_group.setLayout(position_layout)
         layout.addWidget(position_group)
 
@@ -396,13 +346,10 @@ class IntegratedGUI(QMainWindow):
         self.minimap_canvas = FigureCanvas(self.minimap_figure)
         self.minimap_canvas.setFixedSize(*GUI_CONFIG["minimap_size"])
 
-        # Set limits from config
-        # X and Y axes configuration are swapped for Xeryon to match camera feed orientation.
-        x_limits = STAGE_POSITION_LIMITS["axis_limits"]["Y"]
-        y_limits = STAGE_POSITION_LIMITS["axis_limits"]["X"]
-        # Use ZAXIS limits for Dover controller, Z limits for others
-        z_axis_key = "ZAXIS" if isinstance(self.z_controller, DoverController) else "Z"
-        z_limits = STAGE_POSITION_LIMITS["axis_limits"][z_axis_key]
+        # Limits are defined in the GUI axis frame, so no swap is needed here.
+        x_limits = STAGE_POSITION_LIMITS["axis_limits"]["X"]
+        y_limits = STAGE_POSITION_LIMITS["axis_limits"]["Y"]
+        z_limits = STAGE_POSITION_LIMITS["axis_limits"]["Z"]
         self.z_min_nm = z_limits["min"]
         self.z_max_nm = z_limits["max"]
 
@@ -410,12 +357,10 @@ class IntegratedGUI(QMainWindow):
         self.minimap_ax.set_ylim(y_limits["min"] / 1e3, y_limits["max"] / 1e3)
         self.minimap_ax.set_aspect("equal", adjustable="box")
 
-        # Set same grid intervals for X and Y
-        major_interval = 20000.0  # µm
-        minor_interval = 5000.0  # µm
+        # ~6 major ticks for the current limits, with 5 subdivisions each.
         for axis in [self.minimap_ax.xaxis, self.minimap_ax.yaxis]:
-            axis.set_major_locator(MultipleLocator(major_interval))
-            axis.set_minor_locator(MultipleLocator(minor_interval))
+            axis.set_major_locator(MaxNLocator(nbins=6))
+            axis.set_minor_locator(AutoMinorLocator(5))
 
         self.minimap_ax.grid(True, which="minor", linewidth=1, alpha=0.3, linestyle=":")
         self.minimap_ax.grid(True, which="major", linewidth=1, alpha=0.5)
@@ -747,9 +692,9 @@ class IntegratedGUI(QMainWindow):
                 self.npy_radio.setChecked(True)
             self.onMatrixTypeChanged()
             reference_pos = XERYON_CONFIG["reference_position"]
-            self.home_x = state.get("home_x", reference_pos["X"])
-            self.home_y = state.get("home_y", reference_pos["Y"])
-            self.home_z = state.get("home_z", reference_pos["Z"])
+            self.home_x = state.get("home_x", reference_pos[self.axis_map["X"]])
+            self.home_y = state.get("home_y", reference_pos[self.axis_map["Y"]])
+            self.home_z = state.get("home_z", reference_pos[self.axis_map["Z"]])
         except Exception as e:
             print(f"Error loading state: {e}")
 
@@ -838,3 +783,70 @@ class IntegratedGUI(QMainWindow):
                 self.z_controller.move(self.home_z)
             finally:
                 self.movement_lock.unlock()
+
+    def _confirmFixtureDown(self) -> bool:
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Swap Warning")
+        msg.setText("Has the mechanical fixture been moved all the way down?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        return msg.exec_() == QMessageBox.Yes
+
+    def swapSample(self) -> None:
+        if self.is_printing or not self._confirmFixtureDown():
+            return
+
+        if not self.movement_lock.tryLock():
+            print("[GUI] Could not acquire movement lock for sample swap.")
+            return
+        try:
+            return_position = {
+                "x": self.x_controller.get_desired_position(),
+                "y": self.y_controller.get_desired_position(),
+                "z": self.z_controller.get_desired_position(),
+            }
+            if any(pos is None for pos in return_position.values()):
+                print("[GUI] Could not read stage position, aborting sample swap.")
+                return
+            self.swap_return_position = return_position
+
+            if isinstance(self.z_controller, DoverController):
+                self.z_controller.move(
+                    SWAP_SAMPLE_POSITION["z"],
+                    wait_for_settled=True,
+                    ignore_limits=True,  # type: ignore[call-arg]
+                )
+            self.y_controller.move(SWAP_SAMPLE_POSITION["y"], ignore_limits=True)  # type: ignore[call-arg]
+            self.x_controller.move(SWAP_SAMPLE_POSITION["x"], ignore_limits=True)  # type: ignore[call-arg]
+        finally:
+            self.movement_lock.unlock()
+
+        self.swap_sample_button.setEnabled(False)
+        self.swap_complete_button.setEnabled(True)
+
+    def swapComplete(self) -> None:
+        if (
+            self.is_printing
+            or self.swap_return_position is None
+            or not self._confirmFixtureDown()
+        ):
+            return
+
+        if not self.movement_lock.tryLock():
+            print("[GUI] Could not acquire movement lock for sample swap.")
+            return
+        try:
+            self.x_controller.move(
+                self.swap_return_position["x"], wait_for_settled=True
+            )
+            self.y_controller.move(
+                self.swap_return_position["y"], wait_for_settled=True
+            )
+            if isinstance(self.z_controller, DoverController):
+                self.z_controller.move(self.swap_return_position["z"])
+        finally:
+            self.movement_lock.unlock()
+
+        self.swap_return_position = None
+        self.swap_complete_button.setEnabled(False)
+        self.swap_sample_button.setEnabled(True)

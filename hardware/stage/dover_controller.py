@@ -121,14 +121,26 @@ class DoverController:
         # Use cached axis list to avoid COM threading issues after PyQt loads
         return len(_axis_list) > 0
 
-    def __init__(self, serial: str = "", home: bool = False, axis: str = "X") -> None:
-        """Initialize the Dover controller."""
+    def __init__(
+        self,
+        serial: str = "",
+        home: bool = False,
+        axis: str = "X",
+        gui_axis: str | None = None,
+    ) -> None:
+        """Initialize the Dover controller.
+
+        Args:
+            axis: Hardware axis letter used for all device commands.
+            gui_axis: GUI-facing axis label for user output (defaults to ``axis``).
+        """
         self.serial = serial
         # Auto-detect axis if only one is available
         if len(_axis_names) == 1:
             self.axis = _axis_names[0].upper()
         else:
             self.axis = axis.upper()
+        self.gui_axis = (gui_axis or self.axis).upper()
         self.position = 0
         self._stop_timer = False
 
@@ -149,7 +161,7 @@ class DoverController:
                 time.sleep(THREADING_CONFIG["position_monitor_interval"])
 
         threading.Thread(target=monitor_position, daemon=True).start()
-        print(f"{self.axis} axis: Connected to DoverController")
+        print(f"{self.gui_axis} axis: Connected to DoverController")
 
     def get_position(self) -> int | None:
         """Get the current position in nanometers."""
@@ -161,53 +173,61 @@ class DoverController:
 
         return _safe_net_call(_get_pos, "GetActualPosition", self.axis)
 
-    def get_desired_position(self) -> int | None:
+    def get_desired_position(self) -> int:
         """Get the commanded position in nanometers."""
-        return _safe_net_call(
+        result = _safe_net_call(
             lambda: (lambda r: int(r.Value * 1e6) if r.Success else None)(
                 self.axis_obj.GetCommandedPosition()
             ),
             "GetCommandedPosition",
             self.axis,
         )
+        return result if result is not None else self.position
 
     def move(
         self,
         target: float,
         tolerance: int | None = None,
         wait_for_settled: bool = False,
-    ) -> None:
+        ignore_limits: bool = False,
+    ) -> bool:
         """Move to target position in nanometers.
 
         Args:
             target: Target position in nanometers
             tolerance: Tolerance in nanometers (used when wait_for_settled=True, defaults to DOVER_CONFIG["settling"]["settling_tolerance"])
             wait_for_settled: If True, wait until position is settled before returning
+            ignore_limits: If True, skip STAGE_POSITION_LIMITS
+
+        Returns: True when the requested move succeeds, False otherwise.
         """
-        is_valid, error_msg = validate_position_limit(self.axis, target)
-        if not is_valid:
-            print(error_msg)
-            return
+        if not ignore_limits:
+            is_valid, error_msg = validate_position_limit(self.gui_axis, target)
+            if not is_valid:
+                print(error_msg)
+                return False
 
         def _move():
             return self.axis_obj.MoveAbsolute(target / 1e6).Result
 
         result = _safe_net_call(_move, "MoveAbsolute", self.axis)
         if result is None:
-            print(f"Move failed for {self.axis} axis: .NET call failed")
-            return
+            print(f"Move failed for {self.gui_axis} axis: .NET call failed")
+            return False
         if not result.Success:
-            print(f"Move failed for {self.axis} axis: {result}")
-            return
+            print(f"Move failed for {self.gui_axis} axis: {result}")
+            return False
 
         if wait_for_settled:
-            self._wait_until_settled(
+            return self._wait_until_settled(
                 target=target,
                 poll_interval=DOVER_CONFIG["settling"]["poll_interval"],
                 duration=DOVER_CONFIG["settling"]["duration"],
                 settling_tolerance=DOVER_CONFIG["settling"]["settling_tolerance"],
                 timeout=DOVER_CONFIG["settling"]["timeout"],
             )
+
+        return True
 
     def stop(self) -> None:
         """Stop movement."""
@@ -217,10 +237,10 @@ class DoverController:
 
         result = _safe_net_call(_stop, "Stop", self.axis)
         if result is None:
-            print(f"Stop failed for {self.axis} axis: .NET call failed")
+            print(f"Stop failed for {self.gui_axis} axis: .NET call failed")
             return
         if not result.Success:
-            print(f"Stop failed for {self.axis} axis: {result}")
+            print(f"Stop failed for {self.gui_axis} axis: {result}")
 
     def home(self) -> None:
         """Find reference/index position and move to reference position."""
@@ -230,10 +250,12 @@ class DoverController:
 
         result = _safe_net_call(_home, "ResetPosition", self.axis)
         if result is None:
-            raise RuntimeError(f"Homing failed for {self.axis} axis: .NET call failed")
+            raise RuntimeError(
+                f"Homing failed for {self.gui_axis} axis: .NET call failed"
+            )
         if not result.Success:
-            raise RuntimeError(f"Homing failed for {self.axis} axis: {result}")
-        print(f"Reference finding finished for {self.axis} axis.")
+            raise RuntimeError(f"Homing failed for {self.gui_axis} axis: {result}")
+        print(f"Reference finding finished for {self.gui_axis} axis.")
 
         # Move to reference position after finding index
         reference_pos = DOVER_CONFIG.get("reference_position", {})

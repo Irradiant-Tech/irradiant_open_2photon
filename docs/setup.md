@@ -311,50 +311,38 @@ Ensure the following directories and files exist:
     - Must contain `Instrument.cfg`
 
 ### 6.5 Stage Positions
-These limits define the allowable motion range for each axis and are used to prevent physical hardware collisions.
+These limits define the allowable motion range for each axis and are used to prevent physical hardware collisions. They are keyed by **GUI axis** (X/Y/Z as the user sees them). Swap Sample parks outside this box and bypasses these limits.
 
 **Important Note:** These limitations only restrict user control of stage movement through the GUI. During initialization and upon connection, some stages will move to their physically encoded limits, such as the Xeryon stage. This code does not alter internal functionality; it only limits which movement commands can be sent through the application.
 
 All values are specified in **nanometers**.
 ```python
 STAGE_POSITION_LIMITS = {
-    # Per-axis position limits (min, max) (nm)
-    # Note: These limits are based on Xeryon stage hardware limits.
-    # PDXC2 may have different limits - this is suboptimal but kept shared
-    # for simplicity. New stage installations will need new per-controller limits.
     "axis_limits": {
-        "X": {"min": -45e6, "max": 45e6},  # -45mm to 45mm
-        "Y": {"min": -45e6, "max": 45e6},  # -45mm to 45mm
-        "Z": {"min": -5e6, "max": 5e6},  # -5mm to 5mm
-        "ZAXIS": {
-            "min": -2.5e6,
-            "max": 2.5e6,
-        },  # -2.5mm to 2.5mm (Dover DOF5 axis name)
+        "X": {"min": -4e6, "max": 9e6},  # -4mm to 9mm
+        "Y": {"min": -4e6, "max": 9e6},  # -4mm to 9mm
+        "Z": {"min": -5e5, "max": 2.5e6},  # -0.5mm to 2.5mm
     },
 }
 ```
 
-### 6.6 Galvo Scaling
-The galvo scaling parameters define the relationship between applied voltage and physical movement of the galvos.
-
-These values represent the full galvo travel range measured over a voltage span of **–Amplitude to +Amplitude**.
+The GUI axis frame is mapped to hardware axis letters in a single place, `STAGE_AXIS_MAP`. The Xeryon X/Y axes are swapped relative to the GUI to match the camera feed orientation; other backends map 1:1. All axis-swap logic derives from this map.
 ```python
-GALVO_SCALING = {"x": 613, "y": 748}  # Galvo scaling (µm/V), full range -1V to 1V
+STAGE_AXIS_MAP = {
+    "xeryon": {"X": "Y", "Y": "X", "Z": "Z"},
+    "default": {"X": "X", "Y": "Y", "Z": "Z"},
+}
 ```
 
+### 6.6 Galvo Scaling
+The galvo scaling parameters define the relationship between applied voltage and physical movement of the galvos in µm/V. This is defined as `GALVO_UM_PER_V` in `config.py`. `GALVO_UM_PER_V` represents the measured galvo travel range divided by the corresponding voltage scan range.
+
 To Calibrate:
-- Set FOV X and FOV Y in the GUI to produce a 1:1 aspect ratio. With the default configuration, this corresponds to:
-    - `FOV X (µm) = 613` 
-    - `FOV Y (µm) = 748` 
 - Print a matrix of ones, and measure the resulting X and Y distances.
+- For each axis, divide the measured dimension by the peak-to-peak galvo voltage range: Galvo Scaling (µm/V) = Measured Distance (µm) / (2 × Voltage Amplitude Corresponding to Measured Distance (V))
 - Update the galvo scaling values in `config.py` based on the measured distances.
 
 **Important Notes:**
-
-FOV X and Y scaling is defined as the following:
-```
-scaling = (input FOV X/Y) / (galvo scaling factor X/Y)
-```
 
 - The software does not allow scaling values greater than the configured galvo limits. This means that FOV values cannot exceed the galvo scaling values defined in the configuration.
     - If they do, voltage values will be clipped at their corresponding +/- Amplitude defined in section 6.3.

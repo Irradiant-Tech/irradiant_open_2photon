@@ -10,7 +10,7 @@ def validate_position_limit(axis: str, target: float) -> tuple[bool, str | None]
     Validate target position against axis limits.
 
     Args:
-        axis: Axis identifier (X, Y, or Z)
+        axis: GUI axis identifier (X, Y, or Z); keys into STAGE_POSITION_LIMITS
         target: Target position in nanometers
 
     Returns:

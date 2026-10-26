@@ -154,8 +154,7 @@ The following parameters are applied to the above print file:
 The minimap provides a real-time visualization of stage position:
 - X/Y position shown as a red cross
 - Z position shown using a vertical color bar
-- Limits are derived from `STAGE_POSITION_LIMITS` in config.py
-- Grid spacing and scaling reflect real physical units
+- Limits and grid spacing are derived from `STAGE_POSITION_LIMITS` in config.py
 
 ![Stage Minimap](docs/diagrams/gui/stage_minimap.png)
 

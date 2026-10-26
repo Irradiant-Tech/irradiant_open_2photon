@@ -77,10 +77,22 @@ class XeryonController:
         except Exception:
             return False
 
-    def __init__(self, serial: str = "", home: bool = False, axis: str = "X") -> None:
-        """Initialize the Xeryon controller."""
+    def __init__(
+        self,
+        serial: str = "",
+        home: bool = False,
+        axis: str = "X",
+        gui_axis: str | None = None,
+    ) -> None:
+        """Initialize the Xeryon controller.
+
+        Args:
+            axis: Hardware axis letter used for all device commands.
+            gui_axis: GUI-facing axis label for user output (defaults to ``axis``).
+        """
         self.serial = serial
         self.axis = axis.upper()
+        self.gui_axis = (gui_axis or axis).upper()
         self.position = 0
         self._position_timer = None
         self._stop_timer = False
@@ -90,7 +102,7 @@ class XeryonController:
         com_port = _get_com_port(serial)
         if not com_port:
             raise ValueError(
-                f"COM port must be specified for {self.axis} axis (e.g., 'COM4') or set in XERYON_CONFIG"
+                f"COM port must be specified for {self.gui_axis} axis (e.g., 'COM4') or set in XERYON_CONFIG"
             )
 
         # Get or create shared Xeryon controller for this COM port
@@ -164,7 +176,7 @@ class XeryonController:
         self._position_timer = threading.Thread(target=monitor_position, daemon=True)
         self._position_timer.start()
 
-        print(f"{self.axis} axis: Connected to XeryonController")
+        print(f"{self.gui_axis} axis: Connected to XeryonController")
 
     def get_position(self) -> int:
         """Get the current position in nanometers."""
@@ -183,31 +195,88 @@ class XeryonController:
         target: float,
         tolerance: int | None = None,
         wait_for_settled: bool = False,
-    ) -> None:
+        ignore_limits: bool = False,
+    ) -> bool:
         """Move to target position in nanometers.
 
         Args:
             target: Target position in nanometers
             tolerance: Tolerance in nanometers (used when wait_for_settled=True, defaults to XERYON_CONFIG["settling"]["settling_tolerance"])
             wait_for_settled: If True, wait until position is settled before returning
-        """
-        # Check per-axis limits
-        is_valid, error_msg = validate_position_limit(self.axis, target)
-        if not is_valid:
-            print(error_msg)
-            return
+            ignore_limits: If True, skip STAGE_POSITION_LIMITS
 
-        self._last_desired_position = target
-        self.axis_obj.setDPOS(target, outputToConsole=False, forceWaiting=True)
+        Returns: True when the requested move succeeds, False otherwise.
+        """
+        if not ignore_limits:
+            is_valid, error_msg = validate_position_limit(self.gui_axis, target)
+            if not is_valid:
+                print(error_msg)
+                return False
+
+        self._last_desired_position = None
+        safe_position = self.get_position()
+        move_succeeded = self.axis_obj.setDPOS(
+            target, outputToConsole=False, forceWaiting=True
+        )
+
+        if not move_succeeded:
+            if self.axis_obj.isErrorLimit():
+                print(
+                    f"WARNING: {self.gui_axis} axis ELIM triggered while moving to {target} nm."
+                    f" Attempting to return to the pre-move position {safe_position} nm."
+                )
+                if self._recover_from_elim(safe_position):
+                    self._last_desired_position = safe_position
+            return False
 
         if wait_for_settled:
-            self.wait_until_settled(
+            settle_succeeded = self.wait_until_settled(
                 target=target,
                 poll_interval=XERYON_CONFIG["settling"]["poll_interval"],
                 duration=XERYON_CONFIG["settling"]["duration"],
                 settling_tolerance=XERYON_CONFIG["settling"]["settling_tolerance"],
                 timeout=XERYON_CONFIG["settling"]["timeout"],
             )
+            if not settle_succeeded:
+                return False
+
+        self._last_desired_position = target
+        return True
+
+    def _recover_from_elim(self, safe_position: int) -> bool:
+        """Clear ELIM state and attempt to return to the pre-move position."""
+
+        # Xeryon documents ENBL=1 (or RSET) as the recovery command for ELIM.
+        # ENBL clears the error without requiring a reload of controller's settings.
+        self.axis_obj.sendCommand("ENBL=1")
+
+        timeout = XERYON_CONFIG["elim_recovery"]["timeout"]
+        poll_interval = XERYON_CONFIG["elim_recovery"]["poll_interval"]
+        start_time = time.monotonic()
+        while self.axis_obj.isErrorLimit() and time.monotonic() - start_time < timeout:
+            time.sleep(poll_interval)
+
+        if self.axis_obj.isErrorLimit():
+            print(
+                f"{self.gui_axis} axis ELIM flag did not clear; return was not attempted."
+            )
+            return False
+
+        move_succeeded = self.axis_obj.setDPOS(
+            safe_position, outputToConsole=False, forceWaiting=True
+        )
+        if not move_succeeded:
+            if self.axis_obj.isErrorLimit():
+                self.axis_obj.sendCommand("ENBL=1")
+            print(
+                f"{self.gui_axis} axis could not return to the pre-move position {safe_position} nm after ELIM."
+            )
+            return False
+
+        print(
+            f"{self.gui_axis} axis returned to the pre-move position {safe_position} nm after ELIM."
+        )
+        return True
 
     def wait_until_settled(
         self, target, poll_interval, duration, settling_tolerance, timeout
@@ -300,13 +369,11 @@ class XeryonController:
                 break
             if attempt < max_retries:
                 print(
-                    f"Index not found for {self.axis} axis, retrying ({attempt + 1}/{max_retries})..."
+                    f"Index not found for {self.gui_axis} axis, retrying ({attempt + 1}/{max_retries})..."
                 )
 
         if not index_found:
-            error_msg = (
-                f"Index not found for {self.axis} axis after {max_retries + 1} attempts"
-            )
+            error_msg = f"Index not found for {self.gui_axis} axis after {max_retries + 1} attempts"
             print(f"Warning: {error_msg}")
             raise RuntimeError(error_msg)
 

@@ -7,7 +7,7 @@ import torch
 from config import (
     DEFAULT_PRINT_PARAMS,
     GALVO_RECOVERY_TIME,
-    GALVO_SCALING,
+    GALVO_UM_PER_V,
     VOLTAGE_AMPLITUDES,
     X_GALVO_CLIP_EXTRA_FRACTION,
     X_GALVO_CLIP_MAX_V,
@@ -116,21 +116,23 @@ def run_print_job(
         print_height_px, scan_size, samplesBetweenLines
     )
 
-    # Scale galvo signals to FOV
-    FOV_x_galvo_scaling = FOV_X_um / GALVO_SCALING["x"]
-    FOV_y_galvo_scaling = FOV_Y_um / GALVO_SCALING["y"]
+    # Scale normalized galvo signals (-1 to 1) to voltage range required for requested FOV
+    x_amp_v = (FOV_X_um / 2) / GALVO_UM_PER_V["x"]
+    y_amp_v = (FOV_Y_um / 2) / GALVO_UM_PER_V["y"]
+    x_normalized_amplitude = x_amp_v / VOLTAGE_AMPLITUDES["x_galvo"]
+    y_normalized_amplitude = y_amp_v / VOLTAGE_AMPLITUDES["y_galvo"]
+
     x_galvo_scaled, y_galvo_scaled = scale_signals(
         signals=[x_galvo_output, y_galvo_output],
-        amplitudes=[FOV_x_galvo_scaling, FOV_y_galvo_scaling],
+        amplitudes=[x_normalized_amplitude, y_normalized_amplitude],
     )
 
     # Scaled signals are copies, delete x_galvo_output and y_galvo_output
     del x_galvo_output, y_galvo_output
 
     # X galvo symmetric clip: magnitude = min(effective * (1 + extra), max V)
-    effective_x_amplitude = FOV_x_galvo_scaling * VOLTAGE_AMPLITUDES["x_galvo"]
     x_galvo_clip_magnitude_v = min(
-        effective_x_amplitude * (1 + X_GALVO_CLIP_EXTRA_FRACTION),
+        x_amp_v * (1 + X_GALVO_CLIP_EXTRA_FRACTION),
         X_GALVO_CLIP_MAX_V,
     )
     # Normalize x_galvo so ±1 = clip magnitude
@@ -178,7 +180,12 @@ def run_print_job(
         print(f"z_frame {orig + 1}/{number_of_z_frames}")
         target_z = int(target_zs[filtered_idx])
 
-        z_stage.move(target_z, wait_for_settled=True)
+        move_succeeded = z_stage.move(target_z, wait_for_settled=True)
+        if not move_succeeded:
+            raise RuntimeError(
+                f"Aborting print job. Failed to move to z-position for print item: {target_z} nm"
+            )
+
         final_pos = z_stage.get_position()
         print(f"   Z position after moving and settling: {final_pos} nm")
 

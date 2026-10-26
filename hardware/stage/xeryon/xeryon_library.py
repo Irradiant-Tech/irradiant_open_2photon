@@ -364,9 +364,9 @@ class Axis:
         self.was_valid_DPOS = True
 
         # Wait until position is reached
+        max_iterations = 10000  # 100 seconds max
+        iteration = 0
         if DEBUG_MODE is False and DISABLE_WAITING is False or forceWaiting is True:
-            max_iterations = 10000  # 100 seconds max
-            iteration = 0
             while True:
                 iteration += 1
                 if iteration > max_iterations:
@@ -415,7 +415,7 @@ class Axis:
         if outputToConsole and error is False and DISABLE_WAITING is False:
             outputConsole(getDposEposString(value, self.getEPOS(), unit))
 
-        return not error
+        return not error and iteration <= max_iterations
 
     def getDPOS(self):
         """Get desired position in current units."""

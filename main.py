@@ -10,7 +10,7 @@ except Exception:
     pass
 
 from PyQt5.QtCore import QtMsgType, qInstallMessageHandler
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QIcon
 from PyQt5.QtWidgets import QApplication, QMessageBox
 
 # Suppress QWindowsContext COM warning
@@ -29,6 +29,7 @@ def main() -> None:
     font = QFont()
     font.setPointSize(GUI_CONFIG["font_size"])
     app.setFont(font)
+    app.setWindowIcon(QIcon(GUI_CONFIG["window_icon"]))
     
     msg = QMessageBox()
     msg.setWindowTitle("Safety Warning")

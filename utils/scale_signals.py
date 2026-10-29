@@ -3,13 +3,11 @@ from typing import List
 import numpy as np
 from numpy.typing import DTypeLike
 
-from utils.dtypes import ProcessingDataTypes
-
 
 def scale_signals(
     signals: List[np.ndarray],
     amplitudes: List[float],
-    dtype: DTypeLike = ProcessingDataTypes.numpy_dtype,
+    dtype: DTypeLike | None = None,
     clip: bool = False,
 ) -> List[np.ndarray]:
     """
@@ -18,7 +16,7 @@ def scale_signals(
 
     Args: - signals: list of signals
           - amplitudes: list of amplitudes to scale each signal
-          - dtype: data type of signals
+          - dtype: Optional output data type of signals. If None, the input signal dtype is preserved.
           - clip: True for clipping, False otherwise. Clips to +/- amplitude.
 
     Output: List of scaled signals in the specified dtype.
@@ -29,9 +27,15 @@ def scale_signals(
     signals_out = []
 
     for i, signal in enumerate(signals):
-        signal = signal.copy() * amplitudes[i]
+        dtype_out = signal.dtype if dtype is None else dtype
+        # Promote the calculation dtype before scaling specifically for fp16 -> int16 conversion.
+        # fp16 cannot represent INT16_MAX (32767) and rounds it to 32768, which overflows to
+        # -32768 when cast to int16.
+        working_dtype = np.result_type(signal.dtype, dtype_out)
+
+        scaled = np.multiply(signal, amplitudes[i], dtype=working_dtype)
         if clip:
-            signal = np.clip(signal, -amplitudes[i], amplitudes[i])
-        signals_out.append(signal.astype(dtype))
+            np.clip(scaled, -amplitudes[i], amplitudes[i], out=scaled)
+        signals_out.append(scaled.astype(dtype_out, copy=False))
 
     return signals_out

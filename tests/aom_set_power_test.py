@@ -7,8 +7,8 @@ values from 0 to +Amp on the AOM channel.
 The channel and voltage limits used in this script are defined using values
 imported from config.py:
 - CHANNEL is set from CHANNELS["aom"]["DAQ"]
-- MIN_VOLTAGE is fixed at 0.0 V
-- MAX_VOLTAGE is set from VOLTAGE_AMPLITUDES["aom"]
+- The minimum AOM voltage (AOM_VOLTAGE_RANGE[0]) is fixed at 0.0 V
+- The maximum AOM voltage (AOM_VOLTAGE_RANGE[1]) is set from VOLTAGE_AMPLITUDES["aom"]
 
 To run:
     python tests/aom_set_power_test.py
@@ -29,12 +29,10 @@ import nidaqmx
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from config import CHANNELS, VOLTAGE_AMPLITUDES
+from config import AOM_VOLTAGE_RANGE, CHANNELS
 
 # AOM channel definitions taken from config.py
 CHANNEL = CHANNELS["aom"]["DAQ"]
-MIN_VOLTAGE = 0.0
-MAX_VOLTAGE = VOLTAGE_AMPLITUDES["aom"]
 
 
 def set_aom_voltage(voltage: float) -> bool:
@@ -43,7 +41,7 @@ def set_aom_voltage(voltage: float) -> bool:
         with nidaqmx.Task() as task:
             # Create AOM channel with specified voltage range
             task.ao_channels.add_ao_voltage_chan(
-                CHANNEL, min_val=MIN_VOLTAGE, max_val=MAX_VOLTAGE
+                CHANNEL, min_val=AOM_VOLTAGE_RANGE[0], max_val=AOM_VOLTAGE_RANGE[1]
             )
 
             # Write single voltage value
@@ -65,10 +63,10 @@ class AOMController:
     def set_voltage(self, voltage):
         """Set voltage with proper error handling"""
         # Validate voltage range
-        if not MIN_VOLTAGE <= voltage <= MAX_VOLTAGE:
+        if not AOM_VOLTAGE_RANGE[0] <= voltage <= AOM_VOLTAGE_RANGE[1]:
             messagebox.showerror(
                 "Invalid Voltage",
-                f"Voltage must be between {MIN_VOLTAGE} and {MAX_VOLTAGE} V",
+                f"Voltage must be between {AOM_VOLTAGE_RANGE[0]} and {AOM_VOLTAGE_RANGE[1]} V",
             )
             return False
 
@@ -111,7 +109,8 @@ class AOMGUI:
 
         # Voltage input section
         voltage_label = tk.Label(
-            self.root, text=f"Set AOM Voltage ({MIN_VOLTAGE} to {MAX_VOLTAGE} V):"
+            self.root,
+            text=f"Set AOM Voltage ({AOM_VOLTAGE_RANGE[0]} to {AOM_VOLTAGE_RANGE[1]} V):",
         )
         voltage_label.pack(pady=10)
 
@@ -154,7 +153,7 @@ class AOMGUI:
         except tk.TclError:
             messagebox.showerror(
                 "Invalid Input",
-                f"Please enter a valid number between {MIN_VOLTAGE} and {MAX_VOLTAGE}",
+                f"Please enter a valid number between {AOM_VOLTAGE_RANGE[0]} and {AOM_VOLTAGE_RANGE[1]}",
             )
 
     def run(self):

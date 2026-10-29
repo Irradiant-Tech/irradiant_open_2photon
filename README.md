@@ -105,11 +105,11 @@ A dense, uniform matrix using a single input value will be printed.
     - A value of `1.0` corresponds to **100% of the maximum laser power** as defined by the configured AOM voltage amplitude. See [setup.md](docs/setup.md) for more details.
 
 #### 1.2 Use NumPy File
-- Load a **3D or 2D NumPy file (NPY or NPZ)** representing a voxelized print volume.
+- Load a **1D, 2D, or 3D NumPy file (NPY or NPZ)** representing a voxelized print volume. Print parameters are defined in section 2 below.
   - For NPZ files, the matrix must be stored under the key defined by `NPZ_MATRIX_KEY` in config.py (defaulted to `"data"`).
-- The array shape must be: `(matrix_y, matrix_x, matrix_z)`, corresponding to **Y (slow axis), X (fast axis), and Z (layers)**
-- When a NumPy file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
-- If the input NumPy file has less than three dimensions, it will automatically be promoted to a 3D array with size 1 along any missing axes.
+- The array shape must be: `(matrix_x, matrix_y, matrix_z)`, corresponding to **X (fast axis), Y (slow axis), and Z (layers)**.
+- When a numpy file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
+- A 1D or 2D numpy file is promoted to 3D: `(n,)` becomes `(n, 1, 1)`, `(n, m)` becomes `(n, m, 1)`.
 - Example input files can be found in the [docs/examples](docs/examples/README.md) directory.
 
 ![Print File](docs/diagrams/gui/print_file.png)

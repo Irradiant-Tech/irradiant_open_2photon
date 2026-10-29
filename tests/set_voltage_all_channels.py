@@ -22,7 +22,7 @@ from typing import Dict, List, Optional
 project_root = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(project_root))
 
-from config import CHANNELS, THREADING_CONFIG, VOLTAGE_AMPLITUDES
+from config import AOM_VOLTAGE_RANGE, CHANNELS, THREADING_CONFIG, VOLTAGE_AMPLITUDES
 from hardware.voltage_device.voltage_devices import AnalogDevice, get_voltage_device
 from utils.stop_flag import StopFlag
 
@@ -138,14 +138,14 @@ class MultiChannelVoltageGUI:
         # Voltage input section
         for ch in CHANNELS.keys():
             amp = VOLTAGE_AMPLITUDES[ch]
-            min_v = 0.0 if ch == "aom" else -amp
+            min_v = AOM_VOLTAGE_RANGE[0] if ch == "aom" else -amp
             max_v = amp
 
             row = tk.Frame(body)
             row.pack(fill="x", pady=4)
 
             # Label: Channel name [-amp -> +amp]:
-            label_text = f"{ch} [{min_v} ??? {max_v}]:"
+            label_text = f"{ch} [{min_v} → {max_v}]:"
             tk.Label(row, text=label_text, width=15, anchor="w").pack(side=tk.LEFT)
 
             # User input
@@ -194,7 +194,7 @@ class MultiChannelVoltageGUI:
                 v = float(var.get())
 
                 amp = VOLTAGE_AMPLITUDES[ch]
-                min_v = 0.0 if ch == "aom" else -amp
+                min_v = AOM_VOLTAGE_RANGE[0] if ch == "aom" else -amp
                 max_v = amp
 
                 if not (min_v <= v <= max_v):

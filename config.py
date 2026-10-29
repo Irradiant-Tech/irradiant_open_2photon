@@ -6,6 +6,9 @@ Contains all hardcoded values and device settings.
 import os
 from pathlib import Path
 
+import numpy as np
+import torch
+
 _CONFIG_DIR = Path(__file__).parent.absolute()
 
 # ============================================================================
@@ -89,8 +92,36 @@ VOLTAGE_AMPLITUDES = {
     "z_piezo": 1.0,  # Voltage amplitude (V)
 }
 
+# AOM voltage range is 0 V to +VOLTAGE_AMPLITUDES["aom"], rather than +/-VOLTAGE_AMPLITUDES["aom"].
+AOM_VOLTAGE_RANGE = (0, VOLTAGE_AMPLITUDES["aom"])
+
+# DAQ Configuration
+DTYPE_DAQ = np.float64  # NI-DAQ functions convert output values to FP64 internally.
+
 # ============================================================================
-# Signal Processing & Calibration
+# Signal Processing
+# ============================================================================
+
+# Load in FP32 to preserve low-power precision before scaling and FP16 conversion.
+LOAD_DTYPE_NUMPY = np.float32
+
+# AOM processing uses FP16 to reduce peak memory usage during preprocessing;
+# precision should be sufficient for grayscale control.
+AOM_PROCESSING_DTYPE_TORCH = torch.float16
+
+# Process Z-stage positions in FP64 to preserve positioning precision and represent the full range.
+ZSTAGE_PROCESSING_DTYPE_NUMPY = np.float64
+
+# Galvo signals in FP32 so FP16 quantization of the normalized -1 to 1 waveform doesn't limit resolution.
+AO_PROCESSING_DTYPE = np.float32
+
+# FP16 limits used to construct the direct lookup table for AOM power -> voltage conversion
+FP16_WORKING_LIMIT = torch.finfo(torch.float16).max / 4
+FP16_POS_ZERO_BITS = 0x0000
+FP16_POS_INF_BITS = 0x7C00
+
+# ============================================================================
+# Galvo Calibration
 # ============================================================================
 
 # Galvo scaling (µm/V)
@@ -109,19 +140,16 @@ GALVO_RECOVERY_TIME = 547 * 2e-6  # Galvo recovery time (s)
 X_GALVO_CLIP_EXTRA_FRACTION = 0.5
 X_GALVO_CLIP_MAX_V = max(3.0, VOLTAGE_AMPLITUDES["x_galvo"])  # (V), max clip magnitude
 
-AOM_POWER_RANGE = (0.0, 1.0)  # Min and max allowed powers for AOM
+# ============================================================================
+# AOM Calibration
+# ============================================================================
 
 MASK_TOLERANCE = 1e-10  # Mask tolerance to avoid floating-point noise
-
 LUT_CSV_PATH = str(
     _CONFIG_DIR
     / "print_preprocessing/calibration_files/aom_voltage_lut_interpolate.csv"
 )
 
-# Floating-point precision used in processing pipeline for loading, processing, and casting matrices
-# FP32 is the minimum precision required due to large error amplification during AOM voltage conversion
-# near 0 and 1 V when using FP16.
-PROCESSING_DTYPE_STR = "float32"
 
 # ============================================================================
 # Timing Configuration

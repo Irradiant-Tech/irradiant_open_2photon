@@ -1,22 +1,25 @@
-from typing import List, Tuple, Union
+from typing import List, Tuple
 
 import numpy as np
 import torch
 
 from hardware.voltage_device.voltage_devices import AnalogDevice
-from print_preprocessing.aom_voltage import get_AOM_voltage
-from print_preprocessing.matrix_processing import (
-    matrix_3D_to_vector_list_and_filter,
-    pad_matrix_width,
-)
-from utils.dtypes import ProcessingDataTypes
+from print_preprocessing.aom_voltage import AOM_CALIBRATOR
+from print_preprocessing.matrix_processing import matrix_3D_to_vector_list_and_filter
 
 
 def generate_signals_all_frames(
-    matrix: Union[torch.Tensor, np.ndarray],
+    matrix_box: list[torch.Tensor],
     samplesBetweenLines: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate AOM voltage signals and original z-indices for non-blank frames.
+
+    Args:
+        matrix_box: A list containing the 3D matrix as a torch tensor.
+                    It must be threaded through every function call until preprocessing
+                    takes ownership of it with ``pop()``. Passing the raw tensor would leave
+                    references alive in each caller and prevent its storage from being released.
+        samplesBetweenLines: Number of samples between lines in the flattened signal.
 
     Returns:
         LineSignals: 2D float (num_nonzero_frames, num_points), AOM voltage per frame.
@@ -25,49 +28,30 @@ def generate_signals_all_frames(
                      to get per-frame stage targets and uses the indices to log
                      blank-frame skips.
     """
-    # Convert input matrix to tensor
-    if not isinstance(matrix, torch.Tensor):
-        matrix = torch.from_numpy(matrix)
-        print("Converted matrix to tensor")
+    matrix_box[0] = AOM_CALIBRATOR.prepare_AOM_matrix(matrix_box[0])
+    AOM_CALIBRATOR.get_AOM_voltage(matrix_box[0])
 
-    # Convert matrix to correct dtype
-    if matrix.dtype != ProcessingDataTypes.torch_dtype:
-        matrix = matrix.to(ProcessingDataTypes.torch_dtype)
-        print(f"Converted matrix to {ProcessingDataTypes.torch_dtype}")
+    # Create flattened line signals, then filter and pad, keeping original z-indices
+    LineSignals_tensor, z_indices_tensor = matrix_3D_to_vector_list_and_filter(
+        matrix_box, samplesBetweenLines
+    )
 
-    try:
-        # Convert matrix to voltage (in-place) and pad for blanking
-        get_AOM_voltage(matrix)
-        Padded_matrix = pad_matrix_width(matrix, samplesBetweenLines)
-        del matrix  # Free memory
-        torch.cuda.empty_cache()
+    # Convert tensors to numpy arrays
+    LineSignals = LineSignals_tensor.numpy()
+    del LineSignals_tensor
+    z_indices = z_indices_tensor.numpy()
+    del z_indices_tensor
 
-        # Create flattened line signals and filter, keeping original z-indices
-        LineSignals_tensor, z_indices_tensor = matrix_3D_to_vector_list_and_filter(
-            Padded_matrix
+    num_nonzero_frames = LineSignals.shape[0]
+    if num_nonzero_frames:
+        print(
+            f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}, dtype: {LineSignals.dtype}; "
+            f"num_nonzero_frames: {num_nonzero_frames}, original z range: [{int(z_indices[0])}..{int(z_indices[-1])}]"
         )
-        del Padded_matrix  # Free memory
-        torch.cuda.empty_cache()
+    else:
+        print("WARNING: Print file is empty, nothing will be printed.")
 
-        num_nonzero_frames = LineSignals_tensor.shape[0]
-
-        # Move tensors to CPU and convert to numpy arrays
-        LineSignals = LineSignals_tensor.cpu().numpy()
-        del LineSignals_tensor
-        z_indices = z_indices_tensor.cpu().numpy()
-        del z_indices_tensor
-
-        if num_nonzero_frames:
-            print(
-                f"LineSignals max: {np.max(LineSignals)}, min: {np.min(LineSignals)}, dtype: {LineSignals.dtype}; "
-                f"num_nonzero_frames: {num_nonzero_frames}, original z range: [{int(z_indices[0])}..{int(z_indices[-1])}]"
-            )
-        else:
-            print("WARNING: Print file is empty, nothing will be printed.")
-
-        return LineSignals, z_indices
-    except Exception as e:
-        raise e
+    return LineSignals, z_indices
 
 
 def filter_signals_by_reference(

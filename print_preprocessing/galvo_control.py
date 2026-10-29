@@ -1,6 +1,6 @@
 import numpy as np
 
-from utils.dtypes import ProcessingDataTypes
+from config import AO_PROCESSING_DTYPE
 
 
 def generate_x_galvo_output(
@@ -10,7 +10,7 @@ def generate_x_galvo_output(
     n = samplesBetweenLines + scan_size
     # start so that index samplesBetweenLines (first point of the raster) has value -1
     start = -(2 * samplesBetweenLines + scan_size - 1) / max(1, scan_size - 1)
-    x_line = np.linspace(start, 1.0, n, dtype=ProcessingDataTypes.numpy_dtype)
+    x_line = np.linspace(start, 1.0, n, dtype=AO_PROCESSING_DTYPE)
     x_galvo_output = np.tile(x_line, print_height_px)
     return x_galvo_output
 
@@ -19,11 +19,6 @@ def generate_y_galvo_output(
     print_height_px: int, scan_size: int, samplesBetweenLines: int
 ) -> np.ndarray:
     """Generates normalized Y-galvo (slow axis) output signal."""
-    y_raster = np.linspace(
-        -1.0,
-        1.0,
-        print_height_px,
-        dtype=ProcessingDataTypes.numpy_dtype,
-    )
+    y_raster = np.linspace(-1.0, 1.0, print_height_px, dtype=AO_PROCESSING_DTYPE)
     y_galvo_output = np.repeat(y_raster, samplesBetweenLines + scan_size)
     return y_galvo_output

@@ -1,5 +1,5 @@
 """
-Stage controller assembly.
+Stage controller assembly and shared behavior.
 
 Builds and homes the full set of stage controllers for the GUI. This lives above
 the individual controllers in the import graph (it imports them), which is why it
@@ -50,7 +50,9 @@ def _home_or_fallback(
     except (RuntimeError, Exception) as e:
         # Special handling for Z axis: try Dover as fallback
         if gui_axis == "Z" and not isinstance(controller, DoverController):
-            print(f"Z axis: Reference finding failed ({e}), trying Dover as fallback...")
+            print(
+                f"Z axis: Reference finding failed ({e}), trying Dover as fallback..."
+            )
             if DoverController.is_connected(""):
                 try:
                     dover_z = DoverController(
@@ -85,7 +87,9 @@ def create_stage_controllers():
     """
     xeryon_connected = XeryonController.is_connected("")
     # Single source of truth for the GUI<->hardware axis swap.
-    axis_map = STAGE_AXIS_MAP["xeryon"] if xeryon_connected else STAGE_AXIS_MAP["default"]
+    axis_map = (
+        STAGE_AXIS_MAP["xeryon"] if xeryon_connected else STAGE_AXIS_MAP["default"]
+    )
 
     # Create all controllers first (Z, then X, Y for Xeryon compatibility).
     controllers: dict[str, StageController] = {
@@ -100,3 +104,10 @@ def create_stage_controllers():
         )
 
     return controllers["X"], controllers["Y"], controllers["Z"], axis_map
+
+
+def get_z_step_direction(stage: StageController) -> int:
+    """Return the stage direction for increasing print layer indices.
+    Dover moves the objective upward as layers progress; other stages move downward.
+    """
+    return 1 if isinstance(stage, DoverController) else -1

@@ -1,46 +1,43 @@
 import torch
 
-from utils.dtypes import ProcessingDataTypes
 
-# Set device to GPU if available, otherwise CPU
-device_torch = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def matrix_3D_to_vector_list_and_filter(
+    matrix_box: list, width_increase: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Filter and pad matrix, then convert matrix to flattened list.
+    The input tensor's dtype is preserved throughout processing.
 
+    Args:
+        - matrix_box (list): Single-element list holding the 3D tensor.
+        - width_increase (int): The number of columns of zeros to add to the left.
 
-def pad_matrix_width(matrix_tensor: torch.Tensor, width_increase: int) -> torch.Tensor:
-    # Pre-allocate the full output tensor
+    Returns:
+        - result (torch.Tensor): Non-zero flattened and padded aom frame vectors.
+        - z_indices (torch.Tensor): Indices of non-blank z-frames.
+    """
+    matrix_tensor = matrix_box.pop()
+    torch_dtype = matrix_tensor.dtype
+
+    # Filter out empty z-layers, preserving original z-indices
+    nonzero_mask = torch.any(matrix_tensor != 0, dim=(0, 1))
+    z_indices = torch.nonzero(nonzero_mask, as_tuple=False).flatten()
+    if z_indices.numel() == 0:
+        return torch.empty((0, 0), dtype=torch_dtype), z_indices
+    filtered = matrix_tensor[:, :, nonzero_mask]
+    del matrix_tensor, nonzero_mask
+    matrix_tensor = filtered
+
+    # Pad surviving layers filling the right part with the input matrix
     output_shape = (
         matrix_tensor.shape[0] + width_increase,
         matrix_tensor.shape[1],
         matrix_tensor.shape[2],
     )
-    expanded_tensor = torch.zeros(
-        output_shape, dtype=ProcessingDataTypes.torch_dtype, device=device_torch
-    )
-
-    # Fill the right part with the input matrix (more efficient than cat)
+    expanded_tensor = torch.zeros(output_shape, dtype=torch_dtype)
     expanded_tensor[width_increase:, :, :] = matrix_tensor
+    del matrix_tensor
 
-    return expanded_tensor
-
-
-def matrix_3D_to_vector_list_and_filter(
-    matrix_tensor: torch.Tensor,
-) -> tuple[torch.Tensor, torch.Tensor]:
-    # Create view with permuted dimensions (view, no memory allocated)
-    reshaped = matrix_tensor.permute(2, 1, 0).reshape(matrix_tensor.shape[2], -1)
-    del matrix_tensor  # Free original tensor since we only need the view
-
-    # Find non-zero vectors efficiently
-    nonzero_mask = torch.any(reshaped != 0, dim=1)
-
-    # Capture original z-indices of surviving frames before discarding the mask
-    z_indices = torch.nonzero(nonzero_mask, as_tuple=False).flatten()
-
-    # Filter out zero vectors (creates new tensor, but we need it for return)
-    filtered_vectors = reshaped[nonzero_mask]
-    del reshaped  # Free intermediate tensor
-    del nonzero_mask  # Free mask tensor
-
-    torch.cuda.empty_cache()  # Clear any unused memory in GPU cache
-
-    return filtered_vectors, z_indices
+    # Flatten the tensor and return
+    result = expanded_tensor.permute(2, 1, 0).reshape(expanded_tensor.shape[2], -1)
+    return result, z_indices

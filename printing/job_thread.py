@@ -3,10 +3,8 @@ from datetime import timedelta
 
 from PyQt5.QtCore import QMutex, QThread, pyqtSignal
 
-from hardware.stage.dover_controller import DoverController
-from hardware.stage.mock_controller import MockController
-from hardware.stage.pdxc2_controller import PDXC2Controller
-from hardware.stage.xeryon.xeryon_controller import XeryonController
+from hardware.stage.stage import StageController, get_z_step_direction
+from hardware.stage.utils import validate_position_limit
 from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_data.print_item import PrintItem
 from printing.job_executor import run_print_job
@@ -18,7 +16,7 @@ class PointscanThread(QThread):
 
     def __init__(
         self,
-        z_stage: PDXC2Controller | XeryonController | DoverController | MockController,
+        z_stage: StageController,
         voltage_device: AnalogDevice | None,
         movement_lock: QMutex,
         print_item: PrintItem,
@@ -43,6 +41,21 @@ class PointscanThread(QThread):
         # Lock acquired - hold for entire print duration
         error_occurred = False
         try:
+            # Validate print parameters and that final Z position of print item is within stage limits
+            self.print_item.validate_print_params()
+            _, _, z_um = self.print_item.matrix_extents_um()
+            print_end_z_nm = (
+                float(self.z_stage.position)
+                + get_z_step_direction(self.z_stage) * z_um * 1e3
+            )
+            is_valid, error = validate_position_limit(
+                self.z_stage.gui_axis, print_end_z_nm
+            )
+            if not is_valid and error is not None:
+                raise RuntimeError(
+                    f"Aborting print job. Matrix Z extent of {z_um} um exceeds the stage limits. {error}"
+                )
+
             run_print_job(
                 z_stage=self.z_stage,
                 voltage_device=self.voltage_device,
@@ -53,7 +66,8 @@ class PointscanThread(QThread):
             error_occurred = True
             print(f"\nPrint thread errored: {str(e)}")
         finally:
-            # Clean up matrix memory after job
+            # Fall back cleanup: run_print_job clears the matrix early to
+            # reduce peak memory; clear it again here in case an earlier step failed
             self.print_item.clear_matrix()
             self.movement_lock.unlock()
             self.finished.emit()

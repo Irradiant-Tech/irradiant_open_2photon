@@ -5,17 +5,16 @@ import numpy as np
 import torch
 
 from config import (
+    AO_PROCESSING_DTYPE,
     DEFAULT_PRINT_PARAMS,
     GALVO_RECOVERY_TIME,
     GALVO_UM_PER_V,
     VOLTAGE_AMPLITUDES,
     X_GALVO_CLIP_EXTRA_FRACTION,
     X_GALVO_CLIP_MAX_V,
+    ZSTAGE_PROCESSING_DTYPE_NUMPY,
 )
-from hardware.stage.dover_controller import DoverController
-from hardware.stage.mock_controller import MockController
-from hardware.stage.pdxc2_controller import PDXC2Controller
-from hardware.stage.xeryon.xeryon_controller import XeryonController
+from hardware.stage.stage import StageController, get_z_step_direction
 from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_data.print_item import PrintItem
 from print_preprocessing.galvo_control import (
@@ -27,13 +26,12 @@ from print_preprocessing.signals import (
     filter_signals_by_reference,
     generate_signals_all_frames,
 )
-from utils.dtypes import ProcessingDataTypes
 from utils.scale_signals import scale_signals
 from utils.stop_flag import StopFlag
 
 
 def run_print_job(
-    z_stage: PDXC2Controller | XeryonController | DoverController | MockController,
+    z_stage: StageController,
     voltage_device: AnalogDevice | None,
     stop_flag: StopFlag,
     print_item: PrintItem,
@@ -41,7 +39,6 @@ def run_print_job(
     matrix_3D = print_item.load_matrix()
 
     # Print parameters
-    print_item.validate_print_params()
     z_step_microns = print_item.print_params["z_step"]
     time_per_pixel_us = print_item.print_params["time_per_pixel"]
     FOV_X_um = print_item.print_params["fov_x"]
@@ -56,6 +53,7 @@ def run_print_job(
     # Scan parameters
     scan_size = matrix_3D.shape[0]
     print_height_px = matrix_3D.shape[1]
+    number_of_z_frames = matrix_3D.shape[2]
     z_step_nm = z_step_microns * 1000  # nm
     timePerPixel = time_per_pixel_us * 1e-6  # seconds
     timeBetweenLines = GALVO_RECOVERY_TIME  # Galvo recovery time (constant)
@@ -67,9 +65,17 @@ def run_print_job(
     )
 
     # Generate AOM signals + original z-indices of non-blank frames
+    # Hand the matrix off via a list and drop our reference so the function can
+    # release the original before allocating the padded/flattened tensors.
+    # Torch uses the corresponding NumPy dtype exactly; omit explicit dtype conversion.
+    matrix_box = [torch.from_numpy(matrix_3D)]
+
+    # Remove the cached reference. ``matrix_box`` still keeps the memory alive.
+    print_item.clear_matrix()
+    del matrix_3D
+
     LineSignals, z_indices = generate_signals_all_frames(
-        torch.tensor(matrix_3D, dtype=ProcessingDataTypes.torch_dtype),
-        samplesBetweenLines,
+        matrix_box, samplesBetweenLines
     )
     # Map original z-axis index -> position in filtered arrays. The loop below uses
     # `.get(orig)` for one-shot "is blank? where in filtered arrays?" lookup.
@@ -80,12 +86,10 @@ def run_print_job(
         raise RuntimeError(
             f"Failed to get initial Z position from {z_stage.__class__.__name__}"
         )
-    # Per-frame absolute stage targets, 1D float (num_nonzero,). Dover moves the
-    # objective upward as layers progress; other stages move downward.
-    sign = 1 if isinstance(z_stage, DoverController) else -1
-    target_zs = (z_start + sign * z_indices * z_step_nm).astype(
-        ProcessingDataTypes.numpy_dtype
-    )
+    # Per-frame absolute stage targets, 1D float (num_nonzero,).
+    target_zs = (
+        z_start + get_z_step_direction(z_stage) * z_indices * z_step_nm
+    ).astype(ZSTAGE_PROCESSING_DTYPE_NUMPY)
 
     # Per-frame z-piezo voltage, 1D float (num_nonzero,), normalized to ±1.
     if len(target_zs) and np.max(np.abs(target_zs)) > 0:
@@ -138,12 +142,8 @@ def run_print_job(
     # Normalize x_galvo so ±1 = clip magnitude
     x_galvo_norm_scale = VOLTAGE_AMPLITUDES["x_galvo"] / x_galvo_clip_magnitude_v
     x_galvo_scaled_normalized = np.clip(
-        x_galvo_scaled * x_galvo_norm_scale,
-        -1.0,
-        1.0,
-        dtype=ProcessingDataTypes.numpy_dtype,
+        x_galvo_scaled * x_galvo_norm_scale, -1.0, 1.0, dtype=AO_PROCESSING_DTYPE
     )
-
     del x_galvo_scaled
 
     # Per-channel voltage amplitudes for this print job (order: CHANNEL_ORDER)
@@ -156,7 +156,6 @@ def run_print_job(
 
     # Execute analog signals for each frame
     start_time = time.time()
-    number_of_z_frames = matrix_3D.shape[2]
     print(
         f"Total number of z frames: {number_of_z_frames}, nonzero z frames: {len(LineSignals)}"
     )
@@ -195,7 +194,7 @@ def run_print_job(
         # AOM varies per pixel; z-piezo is a constant DC value for the whole frame.
         aom_frame_expanded = np.repeat(aom_frame, samples_per_value)
         z_piezo_frame_expanded = np.full_like(
-            aom_frame_expanded, z_normalized[filtered_idx]
+            aom_frame_expanded, z_normalized[filtered_idx], dtype=AO_PROCESSING_DTYPE
         )
 
         # Filter signals based on AOM being on/off

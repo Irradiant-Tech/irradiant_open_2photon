@@ -26,15 +26,14 @@ def validate_position_limit(axis: str, target: float) -> tuple[bool, str | None]
     if min_limit is None or max_limit is None:
         return (
             False,
-            f"Position limits not configured for {axis} axis",
+            f"Position limits not configured for {axis} axis.",
         )
 
     # Check if target is within limits
     if target < min_limit or target > max_limit:
         return (
             False,
-            f"Error setting target position for {axis} axis to {target}nm: "
-            f"target outside allowed range [{min_limit}nm, {max_limit}nm]",
+            f"Target {target}nm outside allowed range [{min_limit}nm, {max_limit}nm] for {axis} axis.",
         )
 
     return (True, None)

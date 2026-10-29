@@ -210,7 +210,7 @@ class XeryonController:
         if not ignore_limits:
             is_valid, error_msg = validate_position_limit(self.gui_axis, target)
             if not is_valid:
-                print(error_msg)
+                print(f"Error moving to position. {error_msg}")
                 return False
 
         self._last_desired_position = None

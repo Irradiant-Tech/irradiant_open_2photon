@@ -57,7 +57,7 @@ Array values encode the relative exposure dose at each voxel.
   - `1.0` corresponds to 100% of the laser power
   - Values between `0.0` and `1.0` correspond to **linearly interpolated power fractions**
 
-During printing, these normalized values are scaled by the configured AOM voltage amplitude in `config.py`, such that a value of 1.0 in the array corresponds to 100% of the maximum laser power defined in the system configuration. See [setup.md](docs/setup.md) for more details.
+During printing, these normalized power values are converted to AOM voltages using the calibration LUT selected in the GUI. The LUT contains physical voltages in volts and is truncated at `VOLTAGE_AMPLITUDES["aom"]` in `config.py`, then normalized to that operating range. A voxel value of `1.0` uses the configured maximum voltage and the corresponding calibrated power. See the Calibration section and [setup.md](docs/setup.md) for more details.
 
 #### See [docs/examples](docs/examples/README.md) for input example files.
 
@@ -83,6 +83,7 @@ The GUI is divided into the following sections:
 - Position Control
 - Stage Minimap
 - Laser Control
+- Calibration
 
 Each section is described below.
 
@@ -102,7 +103,7 @@ A dense, uniform matrix using a single input value will be printed.
 - Matrix Z: number of layers
 - Value (0-1): normalized laser power fraction
     - Values greater than `1.0` are clamped to `1.0`, and an empty matrix (all zeros) results in no print.
-    - A value of `1.0` corresponds to **100% of the maximum laser power** as defined by the configured AOM voltage amplitude. See [setup.md](docs/setup.md) for more details.
+    - A value of `1.0` corresponds to **full power at the configured AOM maximum voltage** for the selected calibration.
 
 #### 1.2 Use NumPy File
 - Load a **1D, 2D, or 3D NumPy file (NPY or NPZ)** representing a voxelized print volume. Print parameters are defined in section 2 below.
@@ -131,6 +132,7 @@ The following parameters are applied to the above print file:
 - Locks stage motion
 - Turns off the laser if it was previously on
 - Loads the selected matrix (dense or NumPy)
+- Validates the selected AOM LUT and prepares its calibration tables; a valid LUT path is required for every print
 - Starts the printing thread
 
 #### 3.2 Stop Print
@@ -165,7 +167,21 @@ Laser: OFF / Laser: ON
 - Disabled automatically while a print is running
 - Uses the detected voltage backend
 
-### 7. Joystick Support (Optional)
+### 7. Calibration
+
+Use **Load AOM LUT** to select a calibration CSV, or enter its path in the **AOM LUT** field.
+
+The CSV must have a header row followed by at least two data rows with exactly two columns:
+
+- Column 1: laser power in any consistent units (such as mW), non-negative and strictly increasing.
+- Column 2: physical AOM voltage in volts, non-negative and strictly increasing.
+- All values must be finite, and the first data point must be exactly `(0, 0)` so zero power maps to zero voltage.
+
+The final CSV voltage must be at least `VOLTAGE_AMPLITUDES["aom"]`; otherwise printing is rejected.
+
+An example LUT measured on the reference system (0–3 V) is provided in [print_preprocessing/calibration_files/aom_voltage_lut_example.csv](print_preprocessing/calibration_files/aom_voltage_lut_example.csv).
+
+### 8. Joystick Support (Optional)
 If a joystick is connected, it is enabled automatically.
 - Movements:
 

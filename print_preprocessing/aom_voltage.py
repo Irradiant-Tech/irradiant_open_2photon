@@ -1,8 +1,11 @@
 """Convert normalized laser power fractions to normalized AOM voltage values.
 
-Both columns of the calibration table are normalized to the range [0, 1].
-The resulting AOM signal remains as normalized voltages; the DAQ converts it to
-physical voltage by multiplying by the configured AOM channel amplitude.
+The CSV contains power in any consistent units (such as mW) and physical AOM
+voltages in volts. The table is truncated at the configured AOM amplitude,
+with an interpolated endpoint when needed, then both columns are normalized to
+that operating range. The resulting AOM signal remains as normalized voltages;
+the DAQ converts it to physical voltage by multiplying by the configured AOM
+channel amplitude.
 """
 
 import math
@@ -15,8 +18,8 @@ from config import (
     FP16_POS_INF_BITS,
     FP16_POS_ZERO_BITS,
     FP16_WORKING_LIMIT,
-    LUT_CSV_PATH,
     MASK_TOLERANCE,
+    VOLTAGE_AMPLITUDES,
 )
 
 
@@ -75,10 +78,11 @@ class AOMCalibrator:
     def __init__(self, calibration_file: str):
         """
         Args: - calibration_file: CSV path to calibration LUT where:
-                                  column 1 = normalized power
-                                  column 2 = AOM voltage
+                                  column 1 = power in any consistent units
+                                  column 2 = AOM voltage in volts
         """
         self.calibration_file = calibration_file
+        self.max_voltage = VOLTAGE_AMPLITUDES["aom"]
         self.scale_factor = 1.0
         self.fp16_voltage_table: torch.Tensor | None = None
         self.powers_lut: torch.Tensor | None = None
@@ -91,7 +95,7 @@ class AOMCalibrator:
         )
         if self.lut_data.shape[1] != 2:
             raise ValueError(
-                "AOM calibration file must contain exactly 2 columns (normalized power and AOM voltage)."
+                "AOM calibration file must contain exactly 2 columns (power and AOM voltage in volts)."
             )
         if self.lut_data.shape[0] < 2:
             raise ValueError(
@@ -99,27 +103,38 @@ class AOMCalibrator:
             )
         if not np.isfinite(self.lut_data).all():
             raise ValueError("AOM calibration file must contain only finite values.")
+        if not np.array_equal(self.lut_data[0], [0.0, 0.0]):
+            raise ValueError(
+                "AOM calibration file must start with (0, 0): zero power should map to zero AOM voltage."
+            )
         powers = self.lut_data[:, 0]
         voltages = self.lut_data[:, 1]
-        if not np.all(
-            (powers >= 0) & (powers <= 1) & (voltages >= 0) & (voltages <= 1)
-        ):
+        if not np.all(powers >= 0) or not np.all(voltages >= 0):
             raise ValueError(
-                "AOM calibration voltages and powers fractions must be normalized within [0, 1]."
+                "AOM calibration powers and voltages must be non-negative."
             )
-        if not np.all(np.diff(powers) > 0):
-            raise ValueError("AOM calibration powers must be strictly increasing.")
+        if not np.all(np.diff(powers) > 0) or not np.all(np.diff(voltages) > 0):
+            raise ValueError(
+                "AOM calibration powers and voltages must be strictly increasing."
+            )
+        if voltages[-1] < self.max_voltage:
+            raise ValueError(
+                f"AOM calibration max. voltage ({voltages[-1]:.2f} V) is below the configured AOM max. voltage ({self.max_voltage} V)."
+            )
+
+        # Clamp calibrated range to configured maximum voltage and add exact
+        # endpoint to LUT for when the maximum lies between CSV rows.
+        max_power = np.interp(self.max_voltage, voltages, powers)
+        clamped = voltages < self.max_voltage
+        # First entry is (0, 0);  normalization only requires division by each column's maximum.
+        powers = np.append(powers[clamped], max_power) / max_power
+        voltages = np.append(voltages[clamped], self.max_voltage) / self.max_voltage
 
         self.powers_lut_fp64 = torch.tensor(powers, dtype=torch.float64)
         self.voltages_lut_fp64 = torch.tensor(voltages, dtype=torch.float64)
         self.slopes_fp64, self.intercepts_fp64 = _compute_slopes_and_intercepts(
             self.powers_lut_fp64, self.voltages_lut_fp64
         )
-
-        # Max. voltage limit uses the LUT's full power voltage to maintain consistent power
-        # at the sample plane, while never exceeding min/max of the normalized [0,1] range.
-        self.voltage_lim_upper = min(1, self.voltages_lut_fp64[-1].item())
-        self.voltage_lim_lower = max(0, self.voltages_lut_fp64[0].item())
 
         if AOM_PROCESSING_DTYPE_TORCH == torch.float16:
             # FP16 LUT preparation
@@ -132,7 +147,7 @@ class AOMCalibrator:
 
     def _prepare_AOM_lut_fp16(self):
         """Precompute the FP16 AOM voltage LUT and input scale factor. The returned LUT is converted
-        back to normalized voltage units and clamped to configured hardware/calibration limits.
+        back to normalized voltage units and clamped to [0, 1].
 
         Input powers are scaled before FP16 conversion to move FP16 subnormal range values upward
         so they retain normal FP16 significand precision. Scale factor is a power of two matrix values
@@ -162,7 +177,7 @@ class AOMCalibrator:
             intercepts_scaled_fp64,
         )
         voltage_fp64 = fp16_values / self.scale_factor
-        voltage_fp64.clamp_(self.voltage_lim_lower, self.voltage_lim_upper)
+        voltage_fp64.clamp_(0.0, 1.0)
 
         # Return final table in processing dtype
         fp16_voltage_table = voltage_fp64.to(dtype=AOM_PROCESSING_DTYPE_TORCH)
@@ -187,14 +202,11 @@ class AOMCalibrator:
             vals_to_interp, self.powers_lut, self.slopes, self.intercepts
         )
 
-        # Map endpoints to the LUT's boundary voltages: power 0 -> V(0) and power 1 -> V(full).
-        # Interior values are overwritten below by ``masked_scatter_``.
-        matrix.mul_(self.voltage_lim_upper - self.voltage_lim_lower)
-        matrix.add_(self.voltage_lim_lower)
+        # Normalized endpoints already map to themselves; replace only interior values
         matrix.masked_scatter_(mask, vals_to_interp)
 
-        # Write back in-place using scatter: original matrix tensor is permanently modified
-        matrix.clamp_(self.voltage_lim_lower, self.voltage_lim_upper)
+        # Clamp to keep interpolated voltages within the normalized range
+        matrix.clamp_(0.0, 1.0)
 
     def _lookup_fp16_voltage(self, matrix: torch.Tensor) -> None:
         """Replace scaled FP16 powers with voltages using the direct FP16 LUT where each non-negative
@@ -241,7 +253,3 @@ class AOMCalibrator:
             self._lookup_fp16_voltage(matrix)
         else:  # (torch.float32, torch.float64)
             self._interpolate_AOM_voltage(matrix)
-
-
-# Initialize one instance of AOM calibrator using the default LUT path
-AOM_CALIBRATOR = AOMCalibrator(LUT_CSV_PATH)

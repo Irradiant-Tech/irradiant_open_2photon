@@ -7,6 +7,7 @@ from hardware.stage.stage import StageController, get_z_step_direction
 from hardware.stage.utils import validate_position_limit
 from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_data.print_item import PrintItem
+from print_preprocessing.aom_voltage import AOMCalibrator
 from printing.job_executor import run_print_job
 from utils.stop_flag import StopFlag
 
@@ -20,6 +21,7 @@ class PointscanThread(QThread):
         voltage_device: AnalogDevice | None,
         movement_lock: QMutex,
         print_item: PrintItem,
+        aom_lut_path: str,
     ) -> None:
         super().__init__()
         self.running = True
@@ -28,6 +30,7 @@ class PointscanThread(QThread):
         self.voltage_device = voltage_device
         self.stop_flag = StopFlag()
         self.movement_lock = movement_lock
+        self.aom_lut_path = aom_lut_path
 
     def run(self) -> None:
         thread_start_time = time.time()
@@ -41,6 +44,9 @@ class PointscanThread(QThread):
         # Lock acquired - hold for entire print duration
         error_occurred = False
         try:
+            aom_calibrator = AOMCalibrator(self.aom_lut_path)
+            print(f"AOM calibrator initialized with LUT: {self.aom_lut_path}")
+
             # Validate print parameters and that final Z position of print item is within stage limits
             self.print_item.validate_print_params()
             _, _, z_um = self.print_item.matrix_extents_um()
@@ -61,6 +67,7 @@ class PointscanThread(QThread):
                 voltage_device=self.voltage_device,
                 stop_flag=self.stop_flag,
                 print_item=self.print_item,
+                aom_calibrator=aom_calibrator,
             )
         except Exception as e:
             error_occurred = True

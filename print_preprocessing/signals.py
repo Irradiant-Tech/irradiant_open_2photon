@@ -4,13 +4,14 @@ import numpy as np
 import torch
 
 from hardware.voltage_device.voltage_devices import AnalogDevice
-from print_preprocessing.aom_voltage import AOM_CALIBRATOR
+from print_preprocessing.aom_voltage import AOMCalibrator
 from print_preprocessing.matrix_processing import matrix_3D_to_vector_list_and_filter
 
 
 def generate_signals_all_frames(
     matrix_box: list[torch.Tensor],
     samplesBetweenLines: int,
+    aom_calibrator: AOMCalibrator,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate AOM voltage signals and original z-indices for non-blank frames.
 
@@ -28,8 +29,8 @@ def generate_signals_all_frames(
                      to get per-frame stage targets and uses the indices to log
                      blank-frame skips.
     """
-    matrix_box[0] = AOM_CALIBRATOR.prepare_AOM_matrix(matrix_box[0])
-    AOM_CALIBRATOR.get_AOM_voltage(matrix_box[0])
+    matrix_box[0] = aom_calibrator.prepare_AOM_matrix(matrix_box[0])
+    aom_calibrator.get_AOM_voltage(matrix_box[0])
 
     # Create flattened line signals, then filter and pad, keeping original z-indices
     LineSignals_tensor, z_indices_tensor = matrix_3D_to_vector_list_and_filter(

@@ -17,6 +17,7 @@ from config import (
 from hardware.stage.stage import StageController, get_z_step_direction
 from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_data.print_item import PrintItem
+from print_preprocessing.aom_voltage import AOMCalibrator
 from print_preprocessing.galvo_control import (
     generate_x_galvo_output,
     generate_y_galvo_output,
@@ -35,6 +36,7 @@ def run_print_job(
     voltage_device: AnalogDevice | None,
     stop_flag: StopFlag,
     print_item: PrintItem,
+    aom_calibrator: AOMCalibrator,
 ) -> None:
     matrix_3D = print_item.load_matrix()
 
@@ -75,7 +77,7 @@ def run_print_job(
     del matrix_3D
 
     LineSignals, z_indices = generate_signals_all_frames(
-        matrix_box, samplesBetweenLines
+        matrix_box, samplesBetweenLines, aom_calibrator
     )
     # Map original z-axis index -> position in filtered arrays. The loop below uses
     # `.get(orig)` for one-shot "is blank? where in filtered arrays?" lookup.

@@ -4,3 +4,5 @@
 *.npy
 *.npz
 /gui/gui_state.json
+print_preprocessing/calibration_files/*
+!print_preprocessing/calibration_files/aom_voltage_lut_example.csv

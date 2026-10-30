@@ -245,17 +245,22 @@ The expected input format for printing is **voxel values, which are expected to 
   - `1.0` represents `VOLTAGE_AMPLITUDES["aom"]` volts (**100% laser power**)
 - Values between `0.0` and `1.0` in the input array are converted to a voltage value between `0 V` and the configured AOM voltage amplitude.
 
-This means the **AOM voltage amplitude defined above directly corresponds to the laser power used at 100% exposure**.  
-Changing the AOM amplitude therefore **rescales the maximum laser power** for all prints without modifying the input pattern.
+The configured AOM amplitude defines the maximum voltage used for printing. Changing the amplitude selects a different operating range from the same calibration, provided the CSV covers the new maximum voltage.
 
 **Power Fraction to Voltage Conversion:**
 
-The power fraction specified in the input file is converted to an output voltage using the calibration file:
+Select a calibration CSV using **Load AOM LUT** in the GUI's **Calibration** section, or enter its path in the **AOM LUT** field. A valid calibration is required for every print mode.
 
-`print_preprocessing\calibration_files\aom_voltage_lut_interpolate.csv`
-- This file defines a mapping from **power fraction (0–1)** to a **normalized AOM drive voltage**.
-- The normalized voltage output is then scaled linearly from **0 V** to the **AOM voltage amplitude** defined in `config.py`.
-- The provided calibration was generated using the system’s AOM and is valid over a **0–3 V** calibration range.
+The CSV must have a header row and at least two data rows with exactly two columns:
+
+- Column 1: power in any consistent units (such as mW), non-negative and strictly increasing.
+- Column 2: physical AOM drive voltage in volts, non-negative and strictly increasing.
+- All values must be finite, and the first data point must be exactly `(0, 0)`.
+- The final voltage must be at least `VOLTAGE_AMPLITUDES["aom"]`. A LUT ending below that maximum is rejected.
+- An example LUT measured on the reference system (0–3 V) is provided in [print_preprocessing/calibration_files/aom_voltage_lut_example.csv](../print_preprocessing/calibration_files/aom_voltage_lut_example.csv).
+
+The software retains the range from `0 V` to the configured AOM maximum voltage and divides the retained power values by the power at that voltage. A voxel value of `1.0` maps to the configured maximum voltage, while intermediate voxel values represent fractions of the power available at that voltage.
+
 - **If grayscale printing does not behave as expected**: the most common cause is a mismatch between the calibration file and the AOM hardware. In this case, the calibration file should be regenerated or updated to match the current AOM and voltage range.
 
 ### 6.4 Stage Controllers

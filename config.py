@@ -32,6 +32,7 @@ GUI_CONFIG = {
     ),  # Window geometry in pixels (x, y, width, height)
     "font_size": 9,  # Font size in points
     "minimap_size": (663, 480),  # Minimap size in pixels (width, height)
+    "group_box_style": "QGroupBox::title { font-weight: bold; color: red; }",  # QGroupBox title style
 }
 
 # ============================================================================
@@ -121,7 +122,7 @@ FP16_POS_ZERO_BITS = 0x0000
 FP16_POS_INF_BITS = 0x7C00
 
 # ============================================================================
-# Galvo Calibration
+# Galvo Calibration + AOM Calibration
 # ============================================================================
 
 # Galvo scaling (µm/V)
@@ -140,15 +141,7 @@ GALVO_RECOVERY_TIME = 547 * 2e-6  # Galvo recovery time (s)
 X_GALVO_CLIP_EXTRA_FRACTION = 0.5
 X_GALVO_CLIP_MAX_V = max(3.0, VOLTAGE_AMPLITUDES["x_galvo"])  # (V), max clip magnitude
 
-# ============================================================================
-# AOM Calibration
-# ============================================================================
-
 MASK_TOLERANCE = 1e-10  # Mask tolerance to avoid floating-point noise
-LUT_CSV_PATH = str(
-    _CONFIG_DIR
-    / "print_preprocessing/calibration_files/aom_voltage_lut_interpolate.csv"
-)
 
 
 # ============================================================================

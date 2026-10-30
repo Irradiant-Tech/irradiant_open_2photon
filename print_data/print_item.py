@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -28,8 +29,8 @@ class PrintItem:
     def _validate_matrix_params(self) -> None:
         """Validate that required parameters are present for matrix loading."""
         if self.file_type == "numpy":
-            if not self.file_path:
-                raise ValueError("file_path is required when file_type is 'numpy'")
+            if not self.file_path or not os.path.isfile(self.file_path):
+                raise ValueError(f"NumPy file not found: '{self.file_path}'")
         elif self.file_type == "dense":
             if not self.dense_params:
                 raise ValueError("dense_params is required when file_type is 'dense'")

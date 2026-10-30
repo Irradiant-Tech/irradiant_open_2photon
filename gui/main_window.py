@@ -23,6 +23,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -95,12 +96,17 @@ class IntegratedGUI(QMainWindow):
         self.setMinimumWidth(900)
         self.setWindowIcon(QIcon(GUI_CONFIG["window_icon"]))
 
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setFrameShape(QScrollArea.NoFrame)
+        self.setCentralWidget(scroll_area)
+
         central_widget = QWidget()
-        self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
+        scroll_area.setWidget(central_widget)
 
         file_group = QGroupBox("Print File")
-        file_group.setStyleSheet("QGroupBox::title { font-weight: bold; color: red; }")
+        file_group.setStyleSheet(GUI_CONFIG["group_box_style"])
         file_layout = QFormLayout()
 
         matrix_type_group = QButtonGroup(self)
@@ -154,9 +160,7 @@ class IntegratedGUI(QMainWindow):
         layout.addWidget(file_group)
 
         params_group = QGroupBox("Print Parameters")
-        params_group.setStyleSheet(
-            "QGroupBox::title { font-weight: bold; color: red; }"
-        )
+        params_group.setStyleSheet(GUI_CONFIG["group_box_style"])
         params_layout = QFormLayout()
 
         self.z_step_input = QLineEdit(str(DEFAULT_PRINT_PARAMS["z_step"]))
@@ -218,14 +222,28 @@ class IntegratedGUI(QMainWindow):
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
 
+        calibration_group = QGroupBox("Calibration")
+        calibration_group.setStyleSheet(GUI_CONFIG["group_box_style"])
+        calibration_layout = QFormLayout()
+
+        aom_lut_layout = QHBoxLayout()
+        self.aom_lut_path_input = QLineEdit()
+        self.aom_lut_path_input.textChanged.connect(self.saveState)
+        self.load_aom_lut_button = QPushButton("Load AOM LUT")
+        self.load_aom_lut_button.clicked.connect(self.loadAOMLUTFile)
+        aom_lut_layout.addWidget(self.aom_lut_path_input)
+        aom_lut_layout.addWidget(self.load_aom_lut_button)
+        calibration_layout.addRow("AOM LUT:", aom_lut_layout)
+
+        calibration_group.setLayout(calibration_layout)
+        layout.addWidget(calibration_group)
+
         self.pointscan_button = QPushButton("Start Print")
         self.pointscan_button.clicked.connect(self.runPointscan)
         layout.addWidget(self.pointscan_button)
 
         position_group = QGroupBox("Position Control")
-        position_group.setStyleSheet(
-            "QGroupBox::title { font-weight: bold; color: red; }"
-        )
+        position_group.setStyleSheet(GUI_CONFIG["group_box_style"])
         position_layout = QVBoxLayout()
 
         def add_labeled_column(h_layout, label_text, widget, align_widget=False):
@@ -467,22 +485,31 @@ class IntegratedGUI(QMainWindow):
         self.matrix_z_input.setEnabled(use_dense)
         self.dense_matrix_value_input.setEnabled(use_dense)
 
-    def loadNPYFile(self) -> None:
-        """Load NumPy file (NPY or NPZ)."""
-        initial_dir = (
-            os.path.dirname(self.npy_path_input.text())
-            if self.npy_path_input.text()
-            else ""
-        )
+    def _loadFile(self, path_input: QLineEdit, title: str, file_filter: str) -> None:
+        """Generic file loading dialog."""
+        initial_dir = os.path.dirname(path_input.text()) if path_input.text() else ""
+        # Use Qt's dialog to avoid native Windows dialog freezing after MotionSynergy initialization
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select NumPy file",
+            title,
             initial_dir,
-            "NumPy Files (*.npy *.npz)",
+            file_filter,
             options=QFileDialog.DontUseNativeDialog,
         )
         if file_path:
-            self.npy_path_input.setText(file_path)
+            path_input.setText(file_path)
+
+    def loadNPYFile(self) -> None:
+        """Load NumPy file (NPY or NPZ)."""
+        self._loadFile(
+            self.npy_path_input, "Select NumPy file", "NumPy Files (*.npy *.npz)"
+        )
+
+    def loadAOMLUTFile(self) -> None:
+        """Select an AOM calibration LUT file."""
+        self._loadFile(
+            self.aom_lut_path_input, "Select AOM LUT File", "CSV Files (*.csv)"
+        )
 
     def runPointscan(self) -> None:
         if not self.is_printing:
@@ -534,11 +561,19 @@ class IntegratedGUI(QMainWindow):
 
                         self.initial_z_pos = self.z_controller.position
 
+                        # Initialize AOM calibrator
+                        aom_lut_path = self.aom_lut_path_input.text()
+                        if not os.path.isfile(aom_lut_path):
+                            raise ValueError(
+                                f"AOM LUT file not found: '{aom_lut_path}'"
+                            )
+
                         self.pointscan_thread = PointscanThread(
-                            self.z_controller,
-                            self.voltage_device,
-                            self.movement_lock,
-                            print_item,
+                            z_stage=self.z_controller,
+                            voltage_device=self.voltage_device,
+                            movement_lock=self.movement_lock,
+                            print_item=print_item,
+                            aom_lut_path=aom_lut_path,
                         )
 
                         self.pointscan_thread.finished.connect(self.onPointscanFinished)
@@ -624,6 +659,7 @@ class IntegratedGUI(QMainWindow):
             "dense_matrix_value": self.dense_matrix_value_input.text(),
             "use_dense": self.dense_radio.isChecked(),
             "npy_path": self.npy_path_input.text(),
+            "aom_lut_path": self.aom_lut_path_input.text(),
             "x_position": self.x_controller.position,
             "y_position": self.y_controller.position,
             "z_position": self.z_controller.position,
@@ -637,7 +673,7 @@ class IntegratedGUI(QMainWindow):
 
     def loadState(self) -> None:
         """Load UI state from file."""
-        if not os.path.exists(self.state_file):
+        if not os.path.isfile(self.state_file):
             return
 
         try:
@@ -684,6 +720,7 @@ class IntegratedGUI(QMainWindow):
                 )
             )
             self.npy_path_input.setText(state.get("npy_path", ""))
+            self.aom_lut_path_input.setText(state.get("aom_lut_path", ""))
 
             use_dense = state.get("use_dense", True)
             if use_dense:

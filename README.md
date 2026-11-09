@@ -44,7 +44,7 @@ Irradiant-2photon uses a voxel-based lithography model in which print files are 
 ### Array Semantics
 Each element in the array corresponds to a single voxel in the printed volume:
 ```
-matrix[y, x, z]
+matrix[x, y, z]
 ```
 - X: Fast scan axis (galvo X)
 - Y: Slow scan axis (galvo Y)
@@ -110,7 +110,7 @@ A dense, uniform matrix using a single input value will be printed.
   - For NPZ files, the matrix must be stored under the key defined by `NPZ_MATRIX_KEY` in config.py (defaulted to `"data"`).
 - The array shape must be: `(matrix_x, matrix_y, matrix_z)`, corresponding to **X (fast axis), Y (slow axis), and Z (layers)**.
 - When a numpy file is loaded, **Matrix X / Matrix Y / Matrix Z fields are ignored**, as the print dimensions are taken directly from the array shape.
-- A 1D or 2D numpy file is promoted to 3D: `(n,)` becomes `(n, 1, 1)`, `(n, m)` becomes `(n, m, 1)`.
+- A 1D or 2D numpy file is promoted to 3D: `(n,)` becomes `(1, n, 1)`, `(n, m)` becomes `(n, m, 1)`.
 - Example input files can be found in the [docs/examples](docs/examples/README.md) directory.
 
 ![Print File](docs/diagrams/gui/print_file.png)
@@ -121,7 +121,9 @@ The following parameters are applied to the above print file:
 - **Z Step (µm):** Distance the Z stage moves between layers, applied after each completed XY scan. **This is how the voxel spacing in Z is defined.**
 - **Time per Pixel (µs):** Dwell time per pixel (output sample rate).
 - **FOV X / FOV Y (µm):** Physical scan size in X and Y. **This is how the voxel spacing in X and Y is defined.**
-  - Must remain within galvo limits defined in config.py
+  - `PrintItem.validate_print_params()` rejects X FOVs above `FOV_UPPER_LIMIT_V * GALVO_UM_PER_V["x"]` and Y FOVs above `2 * VOLTAGE_AMPLITUDES["y_galvo"] * GALVO_UM_PER_V["y"]`, using the limits and calibration in `config.py`.
+  - `FOV_UPPER_LIMIT_V` is the full X voltage span centered on zero, before preacceleration. The Y amplitude is the maximum absolute voltage, so its full span is twice that value.
+  - Scan preparation also checks the extended X FOV against `FOV_UPPER_LIMIT_V` and rejects scans whose calculated X clip magnitude, including scan extension and preacceleration, exceeds `VOLTAGE_AMPLITUDES["x_galvo"]`.
   - See [setup.md](docs/setup.md) for more details on FOV calibration 
 
 ![Printing Parameters](docs/diagrams/gui/printing_parameters.png)

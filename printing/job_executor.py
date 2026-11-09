@@ -6,12 +6,7 @@ import torch
 
 from config import (
     AO_PROCESSING_DTYPE,
-    DEFAULT_PRINT_PARAMS,
-    GALVO_RECOVERY_TIME,
-    GALVO_UM_PER_V,
     VOLTAGE_AMPLITUDES,
-    X_GALVO_CLIP_EXTRA_FRACTION,
-    X_GALVO_CLIP_MAX_V,
     ZSTAGE_PROCESSING_DTYPE_NUMPY,
 )
 from hardware.stage.stage import StageController, get_z_step_direction
@@ -19,11 +14,12 @@ from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_data.print_item import PrintItem
 from print_preprocessing.aom_voltage import AOMCalibrator
 from print_preprocessing.galvo_control import (
+    compute_galvo_amplitude,
     generate_x_galvo_output,
     generate_y_galvo_output,
 )
+from print_preprocessing.scan_params import ScanParams
 from print_preprocessing.signals import (
-    compute_custom_rate_raster_params,
     filter_signals_by_reference,
     generate_signals_all_frames,
 )
@@ -39,32 +35,28 @@ def run_print_job(
     aom_calibrator: AOMCalibrator,
 ) -> None:
     matrix_3D = print_item.load_matrix()
+    scan_params = ScanParams.from_print_item(
+        print_item=print_item, voltage_device=voltage_device
+    )
 
     # Print parameters
-    z_step_microns = print_item.print_params["z_step"]
     time_per_pixel_us = print_item.print_params["time_per_pixel"]
     FOV_X_um = print_item.print_params["fov_x"]
     FOV_Y_um = print_item.print_params["fov_y"]
-    use_custom_xraster_rate = print_item.print_params.get(  # Optional
-        "use_custom_xraster_rate", DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"]
-    )
-    xraster_custom_rate_hz = print_item.print_params.get(  # Optional
-        "xraster_custom_rate_hz", DEFAULT_PRINT_PARAMS["xraster_custom_rate_hz"]
-    )
 
     # Scan parameters
-    scan_size = matrix_3D.shape[0]
+    scan_size = scan_params.scan_samples
     print_height_px = matrix_3D.shape[1]
     number_of_z_frames = matrix_3D.shape[2]
-    z_step_nm = z_step_microns * 1000  # nm
-    timePerPixel = time_per_pixel_us * 1e-6  # seconds
-    timeBetweenLines = GALVO_RECOVERY_TIME  # Galvo recovery time (constant)
-    samplesBetweenLines = int(timeBetweenLines / timePerPixel)
-    sample_rate_hz = float(1 / timePerPixel)
+    z_step_nm = print_item.print_params["z_step"] * 1000
 
     print(
         f"\nStarting print job. FOV_X_um: {FOV_X_um}, FOV_Y_um: {FOV_Y_um}, z_step_nm: {z_step_nm}, time_per_pixel_us: {time_per_pixel_us}"
     )
+    if scan_params.samples_per_value > 1:
+        print(
+            f"Using output rate {scan_params.sample_rate_hz*10**-6:.1f} MHz, with oversampling factor of {scan_params.samples_per_value}x."
+        )
 
     # Generate AOM signals + original z-indices of non-blank frames
     # Hand the matrix off via a list and drop our reference so the function can
@@ -77,7 +69,7 @@ def run_print_job(
     del matrix_3D
 
     LineSignals, z_indices = generate_signals_all_frames(
-        matrix_box, samplesBetweenLines, aom_calibrator
+        matrix_box, *scan_params.base_line_padding, aom_calibrator
     )
     # Map original z-axis index -> position in filtered arrays. The loop below uses
     # `.get(orig)` for one-shot "is blank? where in filtered arrays?" lookup.
@@ -99,36 +91,30 @@ def run_print_job(
     else:
         z_normalized = target_zs.copy()
 
-    # Default to no oversampling (1 sample per value) if not sending at custom sample rate
-    samples_per_value = 1
-    if use_custom_xraster_rate and xraster_custom_rate_hz and voltage_device:
-        sample_rate_hz, samples_per_value = compute_custom_rate_raster_params(
-            voltage_device,
-            xraster_custom_rate_hz,
-            timePerPixel,
-            print_height_px,
-            scan_size,
-            samplesBetweenLines,
-        )
-        # Update to reflect oversampling
-        scan_size *= samples_per_value
-        samplesBetweenLines *= samples_per_value
-
     # Generate signals for x and y galvos scaled from -1 to 1
     x_galvo_output = generate_x_galvo_output(
-        print_height_px, scan_size, samplesBetweenLines
+        print_height_px,
+        scan_size,
+        scan_params.preacceleration_samples,
+        scan_params.fov_extension_samples,
+        scan_params.swing_back_samples,
     )
     y_galvo_output = generate_y_galvo_output(
-        print_height_px, scan_size, samplesBetweenLines
+        print_height_px,
+        scan_size,
+        scan_params.blanking_samples,
     )
 
-    # Scale normalized galvo signals (-1 to 1) to voltage range required for requested FOV
-    x_amp_v = (FOV_X_um / 2) / GALVO_UM_PER_V["x"]
-    y_amp_v = (FOV_Y_um / 2) / GALVO_UM_PER_V["y"]
-    x_normalized_amplitude = x_amp_v / VOLTAGE_AMPLITUDES["x_galvo"]
-    y_normalized_amplitude = y_amp_v / VOLTAGE_AMPLITUDES["y_galvo"]
+    # Scale each galvo for the requested FOV relative to its output amplitude.
+    x_normalized_amplitude = (
+        compute_galvo_amplitude(FOV_X_um, "x") / scan_params.x_galvo_clip_magnitude_v
+    )
+    y_normalized_amplitude = (
+        compute_galvo_amplitude(FOV_Y_um, "y") / VOLTAGE_AMPLITUDES["y_galvo"]
+    )
 
-    x_galvo_scaled, y_galvo_scaled = scale_signals(
+    # DAQ clips FP noise during output conversion; no intermediate clip after normalization
+    x_galvo_norm, y_galvo_norm = scale_signals(
         signals=[x_galvo_output, y_galvo_output],
         amplitudes=[x_normalized_amplitude, y_normalized_amplitude],
     )
@@ -136,21 +122,9 @@ def run_print_job(
     # Scaled signals are copies, delete x_galvo_output and y_galvo_output
     del x_galvo_output, y_galvo_output
 
-    # X galvo symmetric clip: magnitude = min(effective * (1 + extra), max V)
-    x_galvo_clip_magnitude_v = min(
-        x_amp_v * (1 + X_GALVO_CLIP_EXTRA_FRACTION),
-        X_GALVO_CLIP_MAX_V,
-    )
-    # Normalize x_galvo so ±1 = clip magnitude
-    x_galvo_norm_scale = VOLTAGE_AMPLITUDES["x_galvo"] / x_galvo_clip_magnitude_v
-    x_galvo_scaled_normalized = np.clip(
-        x_galvo_scaled * x_galvo_norm_scale, -1.0, 1.0, dtype=AO_PROCESSING_DTYPE
-    )
-    del x_galvo_scaled
-
     # Per-channel voltage amplitudes for this print job (order: CHANNEL_ORDER)
     channel_amplitudes = [
-        x_galvo_clip_magnitude_v,
+        scan_params.x_galvo_clip_magnitude_v,
         VOLTAGE_AMPLITUDES["y_galvo"],
         VOLTAGE_AMPLITUDES["aom"],
         VOLTAGE_AMPLITUDES["z_piezo"],
@@ -194,7 +168,7 @@ def run_print_job(
 
         # Expand to num_points * samples_per_value samples per frame.
         # AOM varies per pixel; z-piezo is a constant DC value for the whole frame.
-        aom_frame_expanded = np.repeat(aom_frame, samples_per_value)
+        aom_frame_expanded = np.repeat(aom_frame, scan_params.samples_per_value)
         z_piezo_frame_expanded = np.full_like(
             aom_frame_expanded, z_normalized[filtered_idx], dtype=AO_PROCESSING_DTYPE
         )
@@ -206,15 +180,15 @@ def run_print_job(
             z_piezo_filtered_frame,
         ) = filter_signals_by_reference(
             aom_frame_expanded,
-            [x_galvo_scaled_normalized, y_galvo_scaled, z_piezo_frame_expanded],
-            samplesBetweenLines + scan_size,
+            [x_galvo_norm, y_galvo_norm, z_piezo_frame_expanded],
+            scan_params.samples_per_line,
         )
         # Filtered signals are copies, delete aom_frame_expanded and z_piezo_frame_expanded
         del aom_frame_expanded, z_piezo_frame_expanded
 
         if voltage_device:
             if not voltage_device.execute_analog_output(
-                sample_rate_hz,
+                scan_params.sample_rate_hz,
                 x_galvo_filtered,
                 y_galvo_filtered,
                 aom_filtered_frame,

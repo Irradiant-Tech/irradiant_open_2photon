@@ -60,7 +60,7 @@ DEFAULT_PRINT_PARAMS = {
     "fov_x": 300.0,  # Field of view X dimension (µm)
     "fov_y": 300.0,  # Field of view Y dimension (µm)
     "use_custom_xraster_rate": False,  # Send X raster at the custom sample rate
-    "xraster_custom_rate_hz": 6
+    "xraster_custom_rate_hz": 0.6
     * 10
     ** 6,  # Custom sample rate for X raster (Hz), if use_xraster_custom_rate_hz is True
 }
@@ -86,12 +86,10 @@ CHANNELS = {
     "z_piezo": {"DAQ": f"{DAQ_DEVICE}/ao3"},
 }
 
-VOLTAGE_AMPLITUDES = {
-    "x_galvo": 1.4,  # Voltage amplitude (V)
-    "y_galvo": 1.4,  # Voltage amplitude (V)
-    "aom": 3.0,  # Voltage amplitude (V)
-    "z_piezo": 1.0,  # Voltage amplitude (V)
-}
+# Maximum absolute output voltages (V); the AOM uses only the positive range.
+# The X limit includes scan extension and preacceleration; the Y limit sets its full FOV.
+# FOV_UPPER_LIMIT_V separately limits the full X voltage span before preacceleration.
+VOLTAGE_AMPLITUDES = {"x_galvo": 6.0, "y_galvo": 2.5, "aom": 3.0, "z_piezo": 1.0}
 
 # AOM voltage range is 0 V to +VOLTAGE_AMPLITUDES["aom"], rather than +/-VOLTAGE_AMPLITUDES["aom"].
 AOM_VOLTAGE_RANGE = (0, VOLTAGE_AMPLITUDES["aom"])
@@ -133,13 +131,43 @@ GALVO_UM_PER_V = {
     "x": 322.857 / (2 * _GALVO_CALIBRATION_AMP_V),  # Measured 322.857 µm over 2.8 V
     "y": 435.063 / (2 * _GALVO_CALIBRATION_AMP_V),  # Measured 435.063 µm over 2.8 V
 }
-GALVO_RECOVERY_TIME = 547 * 2e-6  # Galvo recovery time (s)
 
-# X galvo symmetric clip (blanking overshoot): allow X_GALVO_CLIP_EXTRA_FRACTION beyond effective
-# amplitude; clip magnitude capped at X_GALVO_CLIP_MAX_V.
-# GALVO_RECOVERY_TIME isn't large enough for x-galvo to respond to 50% extension period, but is sufficient for printing.
-X_GALVO_CLIP_EXTRA_FRACTION = 0.5
-X_GALVO_CLIP_MAX_V = max(3.0, VOLTAGE_AMPLITUDES["x_galvo"])  # (V), max clip magnitude
+# Extend the scan raster into the blanking period for X_GALVO_PREACCELERATION_S.
+# Print items requiring more than VOLTAGE_AMPLITUDES["x_galvo"] are rejected.
+X_GALVO_PREACCELERATION_S = 1400 * 1e-6
+
+GALVO_SCAN_BANDWIDTH_HZ = 175.0  # Full line period limit of a sawtooth or triangular wave for the galvos is 1 / GALVO_SCAN_BANDWIDTH_HZ seconds
+SWING_BACK_SLOPE_S_PER_V = 157.64 * 1e-6  # Swing-back fit slope (s/V)
+SWING_BACK_INTERCEPT_S = 332.47 * 1e-6  # Swing-back fit intercept (s)
+
+
+def _x_galvo_working_limit_speed_um_per_s() -> float:
+    """Speed where the voltage-limited max FOV meets the bandwidth-limited min FOV.
+
+    max FOV(v) = 2 * (V * k - T * v)
+    min FOV(v) = v * (P - T - b - m * T * v / k) / (1 + m * v / k)
+    Equating them gives (m * T / k) v^2 + (P - b + T - 2 * V * m) v - 2 * V * k = 0,
+    with k = um/V, V = max X voltage, T = preacceleration, P = 1 / bandwidth, and m, b the swing-back fit.
+    """
+    k = GALVO_UM_PER_V["x"]
+    v_max = VOLTAGE_AMPLITUDES["x_galvo"]
+    t, m = X_GALVO_PREACCELERATION_S, SWING_BACK_SLOPE_S_PER_V
+    qa = m * t / k
+    qb = 1 / GALVO_SCAN_BANDWIDTH_HZ - SWING_BACK_INTERCEPT_S + t - 2 * v_max * m
+    qc = -2 * v_max * k
+    return (-qb + np.sqrt(qb**2 - 4 * qa * qc)) / (2 * qa)
+
+
+# Maximum full X voltage span before preacceleration (V), centered on zero, at the intersection
+# of the voltage-limited maximum FOV and bandwidth-limited minimum FOV. At 1400 us
+# preacceleration this is ~663.8 um FOV at ~257.1 mm/s.
+FOV_UPPER_LIMIT_V = (
+    2 * VOLTAGE_AMPLITUDES["x_galvo"]
+    - 2
+    * X_GALVO_PREACCELERATION_S
+    * _x_galvo_working_limit_speed_um_per_s()
+    / GALVO_UM_PER_V["x"]
+)
 
 MASK_TOLERANCE = 1e-10  # Mask tolerance to avoid floating-point noise
 

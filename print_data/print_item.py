@@ -4,7 +4,12 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 
-from config import REQUIRED_PRINT_PARAMS
+from config import (
+    FOV_UPPER_LIMIT_V,
+    GALVO_UM_PER_V,
+    REQUIRED_PRINT_PARAMS,
+    VOLTAGE_AMPLITUDES,
+)
 from print_data.load_data import (
     generate_dense_matrix,
     load_matrix_from_path,
@@ -82,20 +87,45 @@ class PrintItem:
             int(self.dense_params["matrix_z"]),
         )
 
-    def matrix_extents_um(self) -> tuple[float, float, float]:
-        """Return matrix (X, Y, Z) extents in microns."""
-        x_um = float(self.print_params["fov_x"])
-        y_um = float(self.print_params["fov_y"])
-        _, _, z_vx = self.matrix_extents_voxels()
-        z_um = float(self.print_params["z_step"]) * (z_vx - 1)
-        return (x_um, y_um, z_um)
-
     def validate_print_params(self) -> None:
-        """Validate that required parameters are present for printing."""
+        """Validate that required parameters are present and within limits for printing."""
         for param in REQUIRED_PRINT_PARAMS:
             if param not in self.print_params:
                 raise ValueError(f"{param} is required in print_params")
 
+        has_custom_flag = "use_custom_xraster_rate" in self.print_params
+        has_custom_freq = "xraster_custom_rate_hz" in self.print_params
+        if (
+            has_custom_flag
+            and self.print_params["use_custom_xraster_rate"]
+            and not has_custom_freq
+        ):
+            print(
+                "   [WARNING] use_custom_xraster_rate is True but no xraster_custom_rate_hz is provided in print_params. Will use default custom xraster rate."
+            )
+        if has_custom_freq and not has_custom_flag:
+            print(
+                "   [WARNING] xraster_custom_rate_hz is specified but use_custom_xraster_rate is not in print_params. Will default to 1 / Time Per Pixel for xraster rate."
+            )
+        fov_x_limit = FOV_UPPER_LIMIT_V * GALVO_UM_PER_V["x"]
+        fov_y_limit = VOLTAGE_AMPLITUDES["y_galvo"] * GALVO_UM_PER_V["y"] * 2
+        if self.print_params["fov_x"] > fov_x_limit:
+            raise ValueError(
+                f"[X galvo scan limit] Requested FOV X ({self.print_params['fov_x']} µm) "
+                f"exceeds the maximum active scan span of {fov_x_limit:.2f} µm "
+                f"before preacceleration."
+            )
+        if self.print_params["fov_y"] > fov_y_limit:
+            raise ValueError(
+                f"[Y galvo scan limit] Requested FOV Y ({self.print_params['fov_y']} µm) "
+                f"exceeds the maximum active scan span of {fov_y_limit:.2f} µm."
+            )
+        for axis in ("fov_x", "fov_y"):
+            if self.print_params[axis] <= 0:
+                raise ValueError(
+                    f"{' '.join(axis.split('_')).upper()} must be greater than 0 µm."
+                )
+            
     @classmethod
     def from_gui_inputs(
         cls,

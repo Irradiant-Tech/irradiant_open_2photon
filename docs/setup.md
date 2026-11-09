@@ -221,21 +221,23 @@ These are physical output voltages.
 Always verify amplifier, galvo, AOM, and piezo limits before modifying these values.
 
 ```python
-VOLTAGE_AMPLITUDES = {
-    "x_galvo": 1.4,  # Voltage amplitude (V)
-    "y_galvo": 1.4,  # Voltage amplitude (V)
-    "aom": 3.0,  # Voltage amplitude (V)
-    "z_piezo": 1.0,  # Voltage amplitude (V)
-}
+# Maximum absolute output voltages (V); the AOM uses only the positive range.
+# The X limit includes scan extension and preacceleration; the Y limit sets its full FOV.
+# FOV_UPPER_LIMIT_V separately limits the full X voltage span before preacceleration.
+VOLTAGE_AMPLITUDES = {"x_galvo": 6.0, "y_galvo": 2.5, "aom": 3.0, "z_piezo": 1.0}
 ```
 
-#### X Galvo Clip Fraction
-At the start of each scan line, the X-galvo requires time to accelerate to a constant scan velocity. To compensate for this delayed mechanical response, the generated waveform extends slightly beyond the effective scan amplitude into the blanking region while the AOM is off. This allows the galvo to accelerate before entering the active scan region used for printing. The beginning of this extended portion of the waveform is clipped to a voltage specified in `config.py`.
+#### X Galvo Line Timing
+Each line starts with a return ramp from the previous scan maximum and preacceleration into the scan. The AOM remains off during these segments and during any extra scan width surrounding the image. The voltage amplitude includes the full extension required for this motion.
 
 The following parameters should be adjusted so that a constant scan speed is observed during the raster:
-- `X_GALVO_CLIP_EXTRA_FRACTION`: fraction of the effective scan amplitude by which the signal is extended beyond the scan range before the start of each X raster.
-- `X_GALVO_CLIP_MAX_V`: Maximum absolute voltage allowed for the X-galvo control signal. If the extension defined by `X_GALVO_CLIP_EXTRA_FRACTION` exceeds this voltage, the signal is clipped at this limit.
-- `GALVO_RECOVERY_TIME`: This time should ensure that the encoders have enough time to respond to the additional motion from `X_GALVO_CLIP_EXTRA_FRACTION`. Increase this if the X-galvo does not complete the full extension before the scan starts.
+- `VOLTAGE_AMPLITUDES["x_galvo"]`: Maximum absolute voltage allowed for the X-galvo control signal. Scan parameters are rejected if the required voltage, including the bandwidth extension and preacceleration, exceeds this limit. 
+- `FOV_UPPER_LIMIT_V`: Maximum full X voltage span before adding preacceleration, centered on zero. Computed in `config.py` from the intersection of the voltage-limited maximum FOV and the bandwidth-limited minimum FOV (~663.8 um at 1400 us preacceleration). Each endpoint is half the full span from zero. The requested FOV and any symmetric extension must fit within this span. The separate X amplitude check includes preacceleration.
+- `X_GALVO_PREACCELERATION_S`: Acceleration time before the scan (1400 microseconds by default).
+- `SWING_BACK_SLOPE_S_PER_V` and `SWING_BACK_INTERCEPT_S`: Return-ramp duration is slope times the full return voltage swing plus intercept.
+- `GALVO_SCAN_BANDWIDTH_HZ`: Sawtooth/triangle scan bandwidth limit (175 Hz). If the requested FOV is too small to stay within the galvo bandwidth limit at the chosen scan speed, the scan extends equally beyond both sides of the scan area, keeping it centered as expected for that FOV. The laser stays off during these extensions and during the return ramp and preacceleration.
+
+The integer oversampling factor determines the actual pixel dwell time at the requested output rate. Padding is calculated using that actual timing. The final parameters are checked against the device clock limit, frame memory, and X-galvo voltage limit. An output rate above the device maximum or a frame that does not fit in memory is rejected.
 
 #### AOM power scaling
 The expected input format for printing is **voxel values, which are expected to be normalized between 0 and 1** and are interpreted as **relative laser power**. See [README.md &rarr; Input File Format](../README.md) for more details.
@@ -349,8 +351,7 @@ To Calibrate:
 
 **Important Notes:**
 
-- The software does not allow scaling values greater than the configured galvo limits. This means that FOV values cannot exceed the galvo scaling values defined in the configuration.
-    - If they do, voltage values will be clipped at their corresponding +/- Amplitude defined in section 6.3.
+- The software does not allow scaling values greater than the configured galvo limits. This means that FOV values cannot exceed the galvo scaling values defined in the configuration. If they do, the print will be rejected.
 
 ## 7. Integrating a New Stage Controller
 

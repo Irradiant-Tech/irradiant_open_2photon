@@ -8,6 +8,7 @@ from hardware.stage.utils import validate_position_limit
 from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_data.print_item import PrintItem
 from print_preprocessing.aom_voltage import AOMCalibrator
+from print_preprocessing.scan_params import ScanParams
 from printing.job_executor import run_print_job
 from utils.stop_flag import StopFlag
 
@@ -47,9 +48,19 @@ class PointscanThread(QThread):
             aom_calibrator = AOMCalibrator(self.aom_lut_path)
             print(f"AOM calibrator initialized with LUT: {self.aom_lut_path}")
 
-            # Validate print parameters and that final Z position of print item is within stage limits
-            self.print_item.validate_print_params()
-            _, _, z_um = self.print_item.matrix_extents_um()
+            # Calculate scan parameters from matrix extents
+            try:
+                self.print_item.validate_print_params()
+                ScanParams.from_print_item(
+                    print_item=self.print_item, voltage_device=self.voltage_device
+                )
+            except Exception as e:
+                raise RuntimeError(f"Invalid scan parameters: {e}")
+
+            # Validate that final Z position of print item is within stage limits.
+            z_um = self.print_item.print_params["z_step"] * (
+                self.print_item.matrix_extents_voxels()[2] - 1
+            )
             print_end_z_nm = (
                 float(self.z_stage.position)
                 + get_z_step_direction(self.z_stage) * z_um * 1e3

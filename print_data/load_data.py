@@ -78,7 +78,8 @@ def peek_volume_shape(path: str) -> tuple[int, int, int]:
             if mm is not None:
                 mm.close()
     if len(sh) == 1:
-        return (int(sh[0]), 1, 1)
+        # Loading uses np.atleast_3d, which promotes 1D to (1, N, 1)
+        return (1, int(sh[0]), 1)
     if len(sh) == 2:
         return (int(sh[0]), int(sh[1]), 1)
     if len(sh) != 3:

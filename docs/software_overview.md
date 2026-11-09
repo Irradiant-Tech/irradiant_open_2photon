@@ -17,7 +17,7 @@ This UML diagram describes the internal software architecture of the Irradiant-2
 ## Control Signals
 Below are the diagrams for the control signals of the AOM and the X and Y galvos. These represent a case where the full galvo FOV is printed, and the AOM remains on during patterning.
 
-The x-axis of these diagrams corresponds to the number of samples sent to the DAQ signal generator, at a frequency of 1 / (time per pixel) specified by the user. The variable `b` represents the number of blanking samples for the galvo return time, and `m` represents the number of pixels in the X galvo direction.
+The x-axis of these diagrams corresponds to the number of samples sent to the DAQ signal generator, at a frequency of 1 / (time per pixel) specified by the user. The variable `b` represents the total number of blanking samples for X-galvo swing-back, preacceleration, and any FOV extension on both sides of the active scan, and `m` represents the number of pixels in the X galvo direction.
 
 In a realistic setting, the cycle `(m + b)` repeats for the number of lines specified in the Y direction.
 

@@ -2,7 +2,7 @@ import torch
 
 
 def matrix_3D_to_vector_list_and_filter(
-    matrix_box: list, width_increase: int
+    matrix_box: list, width_increase_before: int, width_increase_after: int
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Filter and pad matrix, then convert matrix to flattened list.
@@ -10,7 +10,8 @@ def matrix_3D_to_vector_list_and_filter(
 
     Args:
         - matrix_box (list): Single-element list holding the 3D tensor.
-        - width_increase (int): The number of columns of zeros to add to the left.
+        - width_increase_before (int): Number of blank samples before each scan line.
+        - width_increase_after (int): Number of blank samples after each scan line.
 
     Returns:
         - result (torch.Tensor): Non-zero flattened and padded aom frame vectors.
@@ -28,14 +29,16 @@ def matrix_3D_to_vector_list_and_filter(
     del matrix_tensor, nonzero_mask
     matrix_tensor = filtered
 
-    # Pad surviving layers filling the right part with the input matrix
+    # Pad both sides of each surviving scan line.
     output_shape = (
-        matrix_tensor.shape[0] + width_increase,
+        matrix_tensor.shape[0] + width_increase_before + width_increase_after,
         matrix_tensor.shape[1],
         matrix_tensor.shape[2],
     )
     expanded_tensor = torch.zeros(output_shape, dtype=torch_dtype)
-    expanded_tensor[width_increase:, :, :] = matrix_tensor
+    expanded_tensor[
+        width_increase_before : width_increase_before + matrix_tensor.shape[0], :, :
+    ] = matrix_tensor
     del matrix_tensor
 
     # Flatten the tensor and return

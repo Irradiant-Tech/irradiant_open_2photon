@@ -31,6 +31,7 @@ from PyQt5.QtWidgets import (
 from config import (
     DEFAULT_PRINT_FILE_PARAMS,
     DEFAULT_PRINT_PARAMS,
+    FOV_UPPER_LIMIT_V,
     GALVO_UM_PER_V,
     GUI_CONFIG,
     STAGE_POSITION_LIMITS,
@@ -181,10 +182,10 @@ class IntegratedGUI(QMainWindow):
         self.fov_y_input.textChanged.connect(self.saveState)
         params_layout.addRow("FOV Y (µm):", self.fov_y_input)
 
-        max_fov_x = 2 * VOLTAGE_AMPLITUDES["x_galvo"] * GALVO_UM_PER_V["x"]
+        max_fov_x = FOV_UPPER_LIMIT_V * GALVO_UM_PER_V["x"]
         max_fov_y = 2 * VOLTAGE_AMPLITUDES["y_galvo"] * GALVO_UM_PER_V["y"]
         max_fov_label = QLabel(
-            f"Max FOV for current settings: X = {max_fov_x:.2f} µm, Y = {max_fov_y:.2f} µm"
+            f"Max Active FOV: X = {max_fov_x:.2f} µm, Y = {max_fov_y:.2f} µm"
         )
         max_fov_label.setStyleSheet("color: gray;")
         params_layout.addRow(max_fov_label)

@@ -3,14 +3,14 @@ from typing import List, Tuple
 import numpy as np
 import torch
 
-from hardware.voltage_device.voltage_devices import AnalogDevice
 from print_preprocessing.aom_voltage import AOMCalibrator
 from print_preprocessing.matrix_processing import matrix_3D_to_vector_list_and_filter
 
 
 def generate_signals_all_frames(
     matrix_box: list[torch.Tensor],
-    samplesBetweenLines: int,
+    samples_before_line: int,
+    samples_after_line: int,
     aom_calibrator: AOMCalibrator,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Generate AOM voltage signals and original z-indices for non-blank frames.
@@ -20,7 +20,9 @@ def generate_signals_all_frames(
                     It must be threaded through every function call until preprocessing
                     takes ownership of it with ``pop()``. Passing the raw tensor would leave
                     references alive in each caller and prevent its storage from being released.
-        samplesBetweenLines: Number of samples between lines in the flattened signal.
+        samples_before_line: Number of blank samples before each scan line.
+        samples_after_line: Number of blank samples after each scan line.
+        aom_calibrator: Initialized calibration for the selected AOM LUT.
 
     Returns:
         LineSignals: 2D float (num_nonzero_frames, num_points), AOM voltage per frame.
@@ -34,7 +36,7 @@ def generate_signals_all_frames(
 
     # Create flattened line signals, then filter and pad, keeping original z-indices
     LineSignals_tensor, z_indices_tensor = matrix_3D_to_vector_list_and_filter(
-        matrix_box, samplesBetweenLines
+        matrix_box, samples_before_line, samples_after_line
     )
 
     # Convert tensors to numpy arrays
@@ -100,61 +102,3 @@ def filter_signals_by_reference(
         )
 
     return filtered_reference, filtered_other_signals
-
-
-def compute_custom_rate_raster_params(
-    voltage_device: AnalogDevice,
-    xraster_custom_rate_hz: float,
-    time_per_pixel: float,
-    print_height_px: int,
-    scan_size: int,
-    samples_between_lines: int,
-) -> tuple[float, int]:
-    """
-    Compute raster parameters for running at a custom output rate while staying
-    within device memory and sample output rate limits.
-
-    Args:
-        voltage_device: Analog output device. Used to get the max sample clock and max total samples allowed in a buffer
-        time_per_pixel: Dwell time per pixel in seconds.
-        print_height_px: Number of x-raster lines (image height in pixels).
-        scan_size: Number of samples in one line for the x-raster
-        samples_between_lines: Number of samples in the blanking period.
-
-    Returns:
-        sample_rate_hz: device output rate (Hz)
-        samples_per_value: oversampling factor
-    """
-    max_sample_rate_hz, max_samples_per_channel = (
-        voltage_device.get_hardware_constraints()
-    )
-
-    def _memory_limited_sample_rate_hz() -> float:
-        """Returns the maximum sample rate that still fits in device memory."""
-        buffer_len_per_channel = (scan_size + samples_between_lines) * print_height_px
-
-        # Max oversampling allowed by memory
-        max_samples_per_value = max(1, max_samples_per_channel / buffer_len_per_channel)
-
-        # Convert oversampling limit into a sample rate limit based on the time per pixel
-        return max_samples_per_value / time_per_pixel
-
-    # Clamp requested rate to what the device is able to output
-    sample_rate_hz = min(
-        xraster_custom_rate_hz,  # Requested rate
-        _memory_limited_sample_rate_hz(),  # Rate limited by device memory
-        max_sample_rate_hz,  # Rate limited by device max sample clock
-    )
-
-    # Oversampling factor at output rate to maintain the set time per pixel
-    samples_per_value = max(1, round(sample_rate_hz * time_per_pixel))
-
-    print(
-        f"Using output rate {sample_rate_hz*10**-6:.1f} MHz, with oversampling factor of {samples_per_value}x."
-    )
-    if sample_rate_hz < xraster_custom_rate_hz:
-        print(
-            f"  Requested custom output rate of {xraster_custom_rate_hz*10**-6:.1f} MHz exceeded device limits."
-        )
-
-    return sample_rate_hz, samples_per_value

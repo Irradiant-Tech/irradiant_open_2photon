@@ -46,6 +46,7 @@ from hardware.stage.dover_controller import DoverController, shutdown_motion_syn
 from hardware.stage.stage import create_stage_controllers
 from hardware.voltage_device.voltage_devices import get_voltage_device
 from print_data.print_item import PrintItem
+from print_preprocessing.scan_params import ScanParams
 from printing.job_thread import LaserThread, PointscanThread
 
 
@@ -117,20 +118,15 @@ class IntegratedGUI(QMainWindow):
         matrix_type_group.addButton(self.npy_radio)
         self.dense_radio.setChecked(True)
         matrix_type_group.buttonClicked.connect(self.onMatrixTypeChanged)
-        matrix_type_group.buttonClicked.connect(self.saveState)
         file_layout.addRow(self.dense_radio)
 
         matrix_layout = QHBoxLayout()
         self.matrix_x_input = QLineEdit(str(DEFAULT_PRINT_FILE_PARAMS["matrix_x"]))
-        self.matrix_x_input.textChanged.connect(self.saveState)
         self.matrix_y_input = QLineEdit(str(DEFAULT_PRINT_FILE_PARAMS["matrix_y"]))
-        self.matrix_y_input.textChanged.connect(self.saveState)
         self.matrix_z_input = QLineEdit(str(DEFAULT_PRINT_FILE_PARAMS["matrix_z"]))
-        self.matrix_z_input.textChanged.connect(self.saveState)
         self.dense_matrix_value_input = QLineEdit(
             str(DEFAULT_PRINT_FILE_PARAMS["dense_matrix_value"])
         )
-        self.dense_matrix_value_input.textChanged.connect(self.saveState)
         matrix_layout.addWidget(QLabel("Matrix X (Fast Axis):", self))
         matrix_layout.addWidget(self.matrix_x_input)
         matrix_layout.addWidget(QLabel("Matrix Y (Slow Axis):", self))
@@ -146,16 +142,12 @@ class IntegratedGUI(QMainWindow):
         npy_layout = QHBoxLayout()
         self.npy_path_input = QLineEdit()
         self.npy_path_input.setEnabled(False)
-        self.npy_path_input.textChanged.connect(self.saveState)
         self.load_npy_button = QPushButton("Load NumPy")
         self.load_npy_button.clicked.connect(self.loadNPYFile)
         self.load_npy_button.setEnabled(False)
         npy_layout.addWidget(self.npy_path_input)
         npy_layout.addWidget(self.load_npy_button)
         file_layout.addRow("NumPy file:", npy_layout)
-
-        # Initialize enabled state based on radio button default (after all widgets are created)
-        self.onMatrixTypeChanged()
 
         file_group.setLayout(file_layout)
         layout.addWidget(file_group)
@@ -165,21 +157,17 @@ class IntegratedGUI(QMainWindow):
         params_layout = QFormLayout()
 
         self.z_step_input = QLineEdit(str(DEFAULT_PRINT_PARAMS["z_step"]))
-        self.z_step_input.textChanged.connect(self.saveState)
         params_layout.addRow("Z Step (µm):", self.z_step_input)
 
         self.time_per_pixel_input = QLineEdit(
             str(DEFAULT_PRINT_PARAMS["time_per_pixel"])
         )
-        self.time_per_pixel_input.textChanged.connect(self.saveState)
         params_layout.addRow("Time per Pixel (µs):", self.time_per_pixel_input)
 
         self.fov_x_input = QLineEdit(str(DEFAULT_PRINT_PARAMS["fov_x"]))
-        self.fov_x_input.textChanged.connect(self.saveState)
         params_layout.addRow("FOV X (µm):", self.fov_x_input)
 
         self.fov_y_input = QLineEdit(str(DEFAULT_PRINT_PARAMS["fov_y"]))
-        self.fov_y_input.textChanged.connect(self.saveState)
         params_layout.addRow("FOV Y (µm):", self.fov_y_input)
 
         max_fov_x = FOV_UPPER_LIMIT_V * GALVO_UM_PER_V["x"]
@@ -195,17 +183,18 @@ class IntegratedGUI(QMainWindow):
 
         self.xraster_default_rate = QRadioButton("1 / Time per Pixel")
         self.xraster_custom_rate = QRadioButton("Custom")
-        use_custom = DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"]
+        use_custom = (
+            DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"]
+            and self.voltage_device is not None
+        )
+        self.xraster_custom_rate.setEnabled(self.voltage_device is not None)
         self.xraster_default_rate.setChecked(not use_custom)
         self.xraster_custom_rate.setChecked(use_custom)
-        self.xraster_default_rate.toggled.connect(self.saveState)
-        self.xraster_custom_rate.toggled.connect(self.saveState)
 
         self.xraster_custom_input = QLineEdit(
             str(DEFAULT_PRINT_PARAMS["xraster_custom_rate_hz"] * 1e-6)
         )
         self.xraster_custom_input.setEnabled(use_custom)
-        self.xraster_custom_input.textChanged.connect(self.saveState)
         self.xraster_custom_rate.toggled.connect(
             lambda checked: self.xraster_custom_input.setEnabled(checked)
         )
@@ -214,14 +203,78 @@ class IntegratedGUI(QMainWindow):
         xraster_layout.addWidget(self.xraster_custom_rate)
         xraster_layout.addWidget(self.xraster_custom_input)
         xraster_layout.addWidget(QLabel("MHz"))
-        xraster_layout.setContentsMargins(0, 0, 0, 0)
+        if self.voltage_device is None:
+            warning = QLabel("  ⚠️ No voltage device connected; custom rate disabled.")
+            xraster_layout.addWidget(warning)
         xraster_layout.addStretch()
+        xraster_layout.setContentsMargins(0, 0, 0, 0)
 
         self.xraster_widget.setLayout(xraster_layout)
         params_layout.addRow("X Raster Sample Rate:", self.xraster_widget)
 
         params_group.setLayout(params_layout)
         layout.addWidget(params_group)
+
+        self.scan_timing_group = QGroupBox("Calculated Scan Timing")
+        self.scan_timing_group.setStyleSheet(GUI_CONFIG["group_box_style"])
+        timing_layout = QHBoxLayout()
+
+        def add_timing_readout(label_text: str) -> tuple[QLabel, QLineEdit]:
+            readout_layout = QHBoxLayout()
+            readout_layout.addStretch()
+            label = QLabel(label_text)
+            value = QLineEdit()
+            readout_layout.addWidget(label)
+            value.setDisabled(True)
+            readout_layout.addWidget(value)
+            readout_layout.addStretch()
+            timing_layout.addLayout(readout_layout, 1)
+            return label, value
+
+        dwell_time_label, self.actual_dwell_time = add_timing_readout(
+            "Actual dwell time:"
+        )
+        tooltip = (
+            "Dwell time is rounded to the nearest whole sample (minimum 1). "
+            "With a custom sample rate, actual dwell time may differ from requested."
+        )
+        dwell_time_label.setToolTip(tooltip)
+        self.actual_dwell_time.setToolTip(tooltip)
+        _, self.time_per_line = add_timing_readout("Time per line:")
+        _, self.scan_speed = add_timing_readout("Scan speed:")
+
+        self.scan_timing_error_label = QLabel()
+        self.scan_timing_error_label.setWordWrap(True)
+        self.scan_timing_error_label.hide()
+        timing_group_layout = QVBoxLayout()
+        timing_group_layout.addLayout(timing_layout)
+        timing_group_layout.addWidget(self.scan_timing_error_label)
+        self.scan_timing_group.setLayout(timing_group_layout)
+        layout.addWidget(self.scan_timing_group)
+
+        # Connect saved state and scan timing for print file and parameter inputs
+        for print_input in (
+            self.matrix_x_input,
+            self.matrix_y_input,
+            self.matrix_z_input,
+            self.dense_matrix_value_input,
+            self.npy_path_input,
+            self.z_step_input,
+            self.time_per_pixel_input,
+            self.fov_x_input,
+            self.fov_y_input,
+            self.xraster_custom_input,
+        ):
+            print_input.textChanged.connect(self.saveState)
+            print_input.textChanged.connect(self.updateScanTiming)
+        self.xraster_custom_rate.toggled.connect(self.saveState)
+        self.xraster_custom_rate.toggled.connect(self.updateScanTiming)
+
+        # Only save state for matrix type; timing is updated by onMatrixTypeChanged
+        matrix_type_group.buttonClicked.connect(self.saveState)
+
+        # Initialize enabled state based on radio button default (after all widgets are created)
+        self.onMatrixTypeChanged()
 
         calibration_group = QGroupBox("Calibration")
         calibration_group.setStyleSheet(GUI_CONFIG["group_box_style"])
@@ -485,6 +538,62 @@ class IntegratedGUI(QMainWindow):
         self.matrix_y_input.setEnabled(use_dense)
         self.matrix_z_input.setEnabled(use_dense)
         self.dense_matrix_value_input.setEnabled(use_dense)
+        self.updateScanTiming()
+
+    def _printItemFromGuiInputs(self) -> PrintItem:
+        """Create a print item for a single print (dense or NPY)"""
+        z_step = float(self.z_step_input.text())
+        time_per_pixel = float(self.time_per_pixel_input.text())
+        fov_x = float(self.fov_x_input.text())
+        fov_y = float(self.fov_y_input.text())
+        matrix_x = int(self.matrix_x_input.text())
+        matrix_y = int(self.matrix_y_input.text())
+        matrix_z = int(self.matrix_z_input.text())
+        use_custom_xraster_rate = self.xraster_custom_rate.isChecked()
+        xraster_custom_rate_hz = float(self.xraster_custom_input.text()) * 1e6
+
+        use_dense = self.dense_radio.isChecked()
+        dense_value = float(self.dense_matrix_value_input.text()) if use_dense else 0.0
+        npy_path = self.npy_path_input.text() if not use_dense else ""
+
+        return PrintItem.from_gui_inputs(
+            use_dense=use_dense,
+            npy_path=npy_path,
+            matrix_x=matrix_x,
+            matrix_y=matrix_y,
+            matrix_z=matrix_z,
+            dense_value=dense_value,
+            z_step=z_step,
+            time_per_pixel=time_per_pixel,
+            fov_x=fov_x,
+            fov_y=fov_y,
+            use_custom_xraster_rate=use_custom_xraster_rate,
+            xraster_custom_rate_hz=xraster_custom_rate_hz,
+        )
+
+    def updateScanTiming(self) -> None:
+        """Preview active scan timing without loading or generating a volume."""
+
+        def _clear_calculations():
+            self.actual_dwell_time.clear()
+            self.time_per_line.clear()
+            self.scan_speed.clear()
+
+        _clear_calculations()
+        self.scan_timing_error_label.clear()
+        self.scan_timing_error_label.hide()
+
+        try:
+            print_item = self._printItemFromGuiInputs()
+            print_item.validate_print_params()
+            scan_params = ScanParams.from_print_item(print_item, self.voltage_device)
+            self.actual_dwell_time.setText(f"{scan_params.actual_dwell_time_us:.3f} µs")
+            self.time_per_line.setText(f"{scan_params.active_line_time_ms:.3f} ms")
+            self.scan_speed.setText(f"{scan_params.scan_speed_mm_s:.3f} mm/s")
+        except Exception as error:
+            _clear_calculations()
+            self.scan_timing_error_label.setText(f"Timing unavailable: {error}")
+            self.scan_timing_error_label.show()
 
     def _loadFile(self, path_input: QLineEdit, title: str, file_filter: str) -> None:
         """Generic file loading dialog."""
@@ -525,41 +634,7 @@ class IntegratedGUI(QMainWindow):
                             print(f"Error turning laser off before printing: {e}")
 
                     try:
-                        z_step = float(self.z_step_input.text())
-                        time_per_pixel = float(self.time_per_pixel_input.text())
-                        fov_x = float(self.fov_x_input.text())
-                        fov_y = float(self.fov_y_input.text())
-                        matrix_x = int(self.matrix_x_input.text())
-                        matrix_y = int(self.matrix_y_input.text())
-                        matrix_z = int(self.matrix_z_input.text())
-                        use_custom_xraster_rate = self.xraster_custom_rate.isChecked()
-                        xraster_custom_rate_hz = (
-                            float(self.xraster_custom_input.text()) * 1e6
-                        )
-
-                        use_dense = self.dense_radio.isChecked()
-                        dense_value = (
-                            float(self.dense_matrix_value_input.text())
-                            if use_dense
-                            else 0.0
-                        )
-                        npy_path = self.npy_path_input.text() if not use_dense else ""
-
-                        print_item = PrintItem.from_gui_inputs(
-                            use_dense=use_dense,
-                            npy_path=npy_path,
-                            matrix_x=matrix_x,
-                            matrix_y=matrix_y,
-                            matrix_z=matrix_z,
-                            dense_value=dense_value,
-                            z_step=z_step,
-                            time_per_pixel=time_per_pixel,
-                            fov_x=fov_x,
-                            fov_y=fov_y,
-                            use_custom_xraster_rate=use_custom_xraster_rate,
-                            xraster_custom_rate_hz=xraster_custom_rate_hz,
-                        )
-
+                        print_item = self._printItemFromGuiInputs()
                         self.initial_z_pos = self.z_controller.position
 
                         # Initialize AOM calibrator
@@ -693,9 +768,12 @@ class IntegratedGUI(QMainWindow):
             self.fov_y_input.setText(
                 state.get("fov_y", str(DEFAULT_PRINT_PARAMS["fov_y"]))
             )
-            use_custom = state.get(
-                "use_custom_xraster_rate",
-                DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"],
+            use_custom = (
+                state.get(
+                    "use_custom_xraster_rate",
+                    DEFAULT_PRINT_PARAMS["use_custom_xraster_rate"],
+                )
+                and self.voltage_device is not None
             )
             self.xraster_default_rate.setChecked(not use_custom)
             self.xraster_custom_rate.setChecked(use_custom)

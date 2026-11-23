@@ -306,8 +306,8 @@ STAGE_POSITION_LIMITS = {
     # the objective inside the immersion holder ring. Hardware travel stays wider
     # (see settings_Xeryon.txt). Swap Sample bypasses these.
     "axis_limits": {
-        "X": {"min": -4e6, "max": 9e6},  # -4mm to 9mm
-        "Y": {"min": -4e6, "max": 9e6},  # -4mm to 9mm
+        "X": {"min": -6e6, "max": 7e6},  # -6mm to 7mm
+        "Y": {"min": -5e6, "max": 8e6},  # -5mm to 8mm
         "Z": {"min": -5e5, "max": 2.5e6},  # -0.5mm to 2.5mm
     },
 }

@@ -29,6 +29,21 @@ class ScanParams:
     fov_extension_samples: int  # Extra scan samples on each side of the FOV
     swing_back_samples: int  # Return ramp samples after the scan
     x_galvo_clip_magnitude_v: float  # Maximum X galvo voltage required for the scan
+    fov_x_um: float  # Active scan width
+
+    @property
+    def actual_dwell_time_us(self) -> float:
+        """Actual pixel dwell time (µs); quantization can occur when using custom raster sample rate."""
+        return self.samples_per_value / self.sample_rate_hz * 1e6
+
+    @property
+    def active_line_time_ms(self) -> float:
+        """Active scan time per line, excluding blanking samples."""
+        return self.scan_samples / self.sample_rate_hz * 1e3
+
+    @property
+    def scan_speed_mm_s(self) -> float:
+        return self.fov_x_um / self.active_line_time_ms
 
     @property
     def blanking_samples(self) -> int:
@@ -112,6 +127,7 @@ class ScanParams:
             fov_extension_samples=fov_extension_samples,
             swing_back_samples=swing_back_samples,
             x_galvo_clip_magnitude_v=x_galvo_clip_magnitude_v,
+            fov_x_um=fov_x_um,
         )
 
         # Reject output rates and frames that exceed device limits.

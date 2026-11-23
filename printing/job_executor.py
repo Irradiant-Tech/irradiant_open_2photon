@@ -53,6 +53,10 @@ def run_print_job(
     print(
         f"\nStarting print job. FOV_X_um: {FOV_X_um}, FOV_Y_um: {FOV_Y_um}, z_step_nm: {z_step_nm}, time_per_pixel_us: {time_per_pixel_us}"
     )
+    print(f"    Actual dwell time: {scan_params.actual_dwell_time_us:.3f} µs")
+    print(f"    Time per line (active scan): {scan_params.active_line_time_ms:.3f} ms")
+    print(f"    Scan speed: {scan_params.scan_speed_mm_s:.3f} mm/s")
+
     if scan_params.samples_per_value > 1:
         print(
             f"Using output rate {scan_params.sample_rate_hz*10**-6:.1f} MHz, with oversampling factor of {scan_params.samples_per_value}x."
